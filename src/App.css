@@ -280,8 +280,7 @@ button:disabled {
 .wave-shell {
   border: 1px solid var(--panel-border);
   border-radius: 12px;
-  overflow: hidden;
-  background: #222222;
+  overflow: hidden;background: #222222;
 }
 
 .waveform {
@@ -311,6 +310,10 @@ button:disabled {
 
 .waveform ::part(region-handle-right) {
   border-right-color: var(--accent-orange) !important;
+}
+
+.waveform ::part(wrapper) {
+  background: #1a1a1a;
 }
 
 .hint-strip {

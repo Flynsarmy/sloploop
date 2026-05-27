@@ -8,8 +8,9 @@ type LoopCurve = 'smoothstep' | 'equal-power'
 
 const MAX_FILE_DURATION_SEC = 600
 const WAVEFORM_BASE_COLOR = '#4A9ABA'
+const WAVEFORM_SELECTION_OUTSIDE_COLOR = '#253840'
 const CROSSFADE_COLOR = 'var(--accent-orange)'
-const SELECTION_FILL_COLOR = 'rgba(74, 154, 186, 0.45)'
+const SELECTION_FILL_COLOR = 'rgba(50, 50, 50, 0.45)'
 const SELECTION_CROSSFADE_FILL = 'color-mix(in srgb, var(--accent-orange) 72%, transparent)'
 const DEFAULT_CROSSFADE_MAX_SEC = 5
 const SELECTION_CROSSFADE_MAX_SEC = 0.2
@@ -231,6 +232,7 @@ function App() {
       const innerStop = `${(100 - percent).toFixed(3)}%`
 
       element.style.background = `linear-gradient(90deg, ${SELECTION_CROSSFADE_FILL} 0%, ${SELECTION_CROSSFADE_FILL} ${edgeStop}, ${SELECTION_FILL_COLOR} ${edgeStop}, ${SELECTION_FILL_COLOR} ${innerStop}, ${SELECTION_CROSSFADE_FILL} ${innerStop}, ${SELECTION_CROSSFADE_FILL} 100%)`
+      element.style.backdropFilter = 'brightness(1.85) saturate(1.2)'
       element.style.borderLeft = `1px solid ${CROSSFADE_COLOR}`
       element.style.borderRight = `1px solid ${CROSSFADE_COLOR}`
       element.style.boxSizing = 'border-box'
@@ -243,6 +245,16 @@ function App() {
     if (!container) {
       return
     }
+
+    const ws = wavesurferRef.current
+    if (ws) {
+      const waveColor = selectionActive ? WAVEFORM_SELECTION_OUTSIDE_COLOR : WAVEFORM_BASE_COLOR
+      ws.setOptions({
+        waveColor,
+        progressColor: waveColor,
+      })
+    }
+
     container.classList.toggle('has-selection', selectionActive)
   }, [])
 
