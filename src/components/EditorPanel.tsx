@@ -14,8 +14,12 @@ type EditorPanelProps = {
   waveColor: string
   transportState: TransportState
   loopPreviewEnabled: boolean
-  onDrop: (event: DragEvent<HTMLDivElement>) => void | Promise<void>
-  onFileInput: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>
+  allowFileDrop?: boolean
+  showImportCapMessage?: boolean
+  footerPrimaryText?: string
+  footerSecondaryText?: string
+  onDrop?: (event: DragEvent<HTMLDivElement>) => void | Promise<void>
+  onFileInput?: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>
   onPlaySelection: () => void
   onPauseSelection: () => void
   onStopPreview: () => void
@@ -33,6 +37,10 @@ function EditorPanel({
   waveColor,
   transportState,
   loopPreviewEnabled,
+  allowFileDrop = true,
+  showImportCapMessage = true,
+  footerPrimaryText = 'Drag region handles to define selection.',
+  footerSecondaryText = 'Use panel controls to preview and export audio.',
   onDrop,
   onFileInput,
   onPlaySelection,
@@ -51,7 +59,7 @@ function EditorPanel({
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="m-0 text-[22px] font-semibold">{sourceName || 'No source loaded'}</h2>
-          <p className="mt-1 mb-0 text-[13px] text-app-muted">Space = preview selection, E = export WAV</p>
+          <p className="mt-1 mb-0 text-[13px] text-app-muted">Selection and output controls</p>
         </div>
         <div className="grid gap-1 text-[13px] text-app-muted md:text-right">
           <span>Start: {regionStart.toFixed(3)}s</span>
@@ -61,15 +69,15 @@ function EditorPanel({
 
       <div
         className="relative flex min-h-[260px] overflow-hidden rounded-xl border border-panel-border bg-panel-bg"
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={onDrop}
+        onDragOver={allowFileDrop ? (event) => event.preventDefault() : undefined}
+        onDrop={allowFileDrop && onDrop ? onDrop : undefined}
       >
         <div
           ref={waveformRef}
           className={audioLoaded ? 'waveform min-h-[260px] w-full' : 'waveform hidden min-h-[260px] w-full'}
           style={{ '--waveform-base-color': waveColor } as CSSProperties}
         />
-        {!audioLoaded ? (
+        {!audioLoaded && allowFileDrop ? (
           <div className="m-3 grid min-h-[calc(260px-24px)] w-full flex-1 content-center justify-items-center gap-1 border border-dashed border-panel-border px-4 py-4 text-center text-app-muted">
             <p className="m-0">Drag and drop WAV, OGG, MP3, AIFF</p>
             <p className="m-0">Supported: WAV, OGG, MP3, AIFF, AIF</p>
@@ -133,9 +141,9 @@ function EditorPanel({
       ) : null}
 
       <div className="flex flex-wrap gap-3 text-xs text-app-muted">
-        <span>Drag region handles to define selection.</span>
-        <span>Mouse wheel over numeric fields for fine adjustments.</span>
-        <span>10-minute import cap to keep browser memory stable.</span>
+        <span>{footerPrimaryText}</span>
+        <span>{footerSecondaryText}</span>
+        {showImportCapMessage ? <span>10-minute import cap to keep browser memory stable.</span> : null}
       </div>
     </section>
   )
