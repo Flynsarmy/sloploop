@@ -15,7 +15,6 @@ type ControlsPanelProps = {
   normalizeOutput: boolean
   canProcess: boolean
   hasCutUndo: boolean
-  isPlayingPreview: boolean
   onModeChange: (mode: Mode) => void
   onLoopCrossfadeChange: (value: number) => void
   onLoopCurveChange: (curve: LoopCurve) => void
@@ -35,9 +34,7 @@ type ControlsPanelProps = {
   ) => void
   onApplyCut: () => void
   onUndoCut: () => void
-  onPreviewSelection: () => void
   onPreviewProcessed: () => void
-  onStopPreview: () => void
   onExportWav: () => void
 }
 
@@ -250,20 +247,14 @@ function CutSettings({
 function OutputSettings({
   normalizeOutput,
   canProcess,
-  isPlayingPreview,
   onNormalizeOutputChange,
-  onPreviewSelection,
   onPreviewProcessed,
-  onStopPreview,
   onExportWav,
 }: {
   normalizeOutput: boolean
   canProcess: boolean
-  isPlayingPreview: boolean
   onNormalizeOutputChange: (checked: boolean) => void
-  onPreviewSelection: () => void
   onPreviewProcessed: () => void
-  onStopPreview: () => void
   onExportWav: () => void
 }) {
   return (
@@ -279,27 +270,11 @@ function OutputSettings({
       <div className="grid gap-2">
         <button
           type="button"
-          onClick={onPreviewSelection}
-          disabled={!canProcess}
-          className={actionButtonClassName}
-        >
-          Preview Selection
-        </button>
-        <button
-          type="button"
           onClick={onPreviewProcessed}
           disabled={!canProcess}
           className={actionButtonClassName}
         >
           Preview Processed
-        </button>
-        <button
-          type="button"
-          onClick={onStopPreview}
-          disabled={!isPlayingPreview}
-          className={actionButtonClassName}
-        >
-          Stop
         </button>
         <button
           type="button"
@@ -328,7 +303,6 @@ function ControlsPanel({
   normalizeOutput,
   canProcess,
   hasCutUndo,
-  isPlayingPreview,
   onModeChange,
   onLoopCrossfadeChange,
   onLoopCurveChange,
@@ -341,9 +315,7 @@ function ControlsPanel({
   onWheelNudge,
   onApplyCut,
   onUndoCut,
-  onPreviewSelection,
   onPreviewProcessed,
-  onStopPreview,
   onExportWav,
 }: ControlsPanelProps) {
   return (
@@ -404,11 +376,8 @@ function ControlsPanel({
       <OutputSettings
         normalizeOutput={normalizeOutput}
         canProcess={canProcess}
-        isPlayingPreview={isPlayingPreview}
         onNormalizeOutputChange={onNormalizeOutputChange}
-        onPreviewSelection={onPreviewSelection}
         onPreviewProcessed={onPreviewProcessed}
-        onStopPreview={onStopPreview}
         onExportWav={onExportWav}
       />
     </section>

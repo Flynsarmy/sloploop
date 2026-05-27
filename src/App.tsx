@@ -163,6 +163,8 @@ function triggerDownload(blob: Blob, filename: string): void {
 }
 
 function App() {
+  type TransportState = 'play' | 'pause' | 'stop'
+
   const [mode, setMode] = useState<Mode>('loop')
   const [sourceName, setSourceName] = useState<string>('')
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null)
@@ -185,7 +187,8 @@ function App() {
   const [cutCrossfadeSec, setCutCrossfadeSec] = useState(0.02)
   const [normalizeOutput, setNormalizeOutput] = useState(true)
 
-  const [isPlayingPreview, setIsPlayingPreview] = useState(false)
+  const [transportState, setTransportState] = useState<TransportState>('stop')
+  const [loopPreviewEnabled, setLoopPreviewEnabled] = useState(false)
   const [undoCount, setUndoCount] = useState(0)
   const [isWaveformReady, setIsWaveformReady] = useState(false)
 
@@ -196,12 +199,23 @@ function App() {
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null)
   const undoRef = useRef<AudioBuffer[]>([])
   const zoomRef = useRef(zoom)
+  const selectionPreviewBufferRef = useRef<AudioBuffer | null>(null)
+  const selectionPreviewStartSecRef = useRef(0)
+  const selectionPreviewDurationSecRef = useRef(0)
+  const selectionPreviewOffsetSecRef = useRef(0)
+  const selectionPreviewStartedAtSecRef = useRef(0)
+  const playheadRafRef = useRef<number | null>(null)
   const styleRegionRef = useRef<(start: number, end: number, element?: HTMLElement | null) => void>(
     () => {},
   )
   const applyWaveColorsRef = useRef<(selectionActive: boolean) => void>(() => {})
   const clearSelectionRef = useRef<(newDuration?: number) => void>(() => {})
   const applySelectionCrossfadePresetRef = useRef<(start: number, end: number) => void>(() => {})
+  const loopPreviewEnabledRef = useRef(loopPreviewEnabled)
+
+  useEffect(() => {
+    loopPreviewEnabledRef.current = loopPreviewEnabled
+  }, [loopPreviewEnabled])
 
   const getSelectionCrossfadeSeconds = useCallback(() => {
     if (mode === 'loop') {
@@ -257,18 +271,123 @@ function App() {
     return contextRef.current
   }, [])
 
+  const stopPlayheadTracking = useCallback(() => {
+    if (playheadRafRef.current !== null) {
+      cancelAnimationFrame(playheadRafRef.current)
+      playheadRafRef.current = null
+    }
+  }, [])
+
+  const startPlayheadTracking = useCallback(() => {
+    const ctx = contextRef.current
+    const ws = wavesurferRef.current
+    const selectionDuration = selectionPreviewDurationSecRef.current
+    const selectionStart = selectionPreviewStartSecRef.current
+
+    if (!ctx || !ws || selectionDuration <= 0) {
+      return
+    }
+
+    stopPlayheadTracking()
+
+    const tick = () => {
+      const wsCurrent = wavesurferRef.current
+      const ctxCurrent = contextRef.current
+      if (!wsCurrent || !ctxCurrent || !previewSourceRef.current) {
+        playheadRafRef.current = null
+        return
+      }
+
+      const elapsed =
+        selectionPreviewOffsetSecRef.current +
+        Math.max(0, ctxCurrent.currentTime - selectionPreviewStartedAtSecRef.current)
+      const offset = loopPreviewEnabledRef.current
+        ? elapsed % selectionDuration
+        : Math.min(elapsed, selectionDuration)
+      ;(wsCurrent as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(selectionStart + offset)
+
+      if (!loopPreviewEnabledRef.current && elapsed >= selectionDuration) {
+        playheadRafRef.current = null
+        return
+      }
+
+      playheadRafRef.current = requestAnimationFrame(tick)
+    }
+
+    playheadRafRef.current = requestAnimationFrame(tick)
+  }, [stopPlayheadTracking])
+
+  const startSelectionPreview = useCallback(
+    async (offsetSeconds: number) => {
+      const buffer = selectionPreviewBufferRef.current
+      if (!buffer) {
+        return
+      }
+
+      const ctx = getAudioContext()
+      if (ctx.state !== 'running') {
+        await ctx.resume()
+      }
+
+      if (previewSourceRef.current) {
+        previewSourceRef.current.onended = null
+        previewSourceRef.current.stop()
+        previewSourceRef.current.disconnect()
+        previewSourceRef.current = null
+      }
+
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      source.loop = loopPreviewEnabledRef.current
+      source.connect(ctx.destination)
+      source.onended = () => {
+        if (previewSourceRef.current !== source) {
+          return
+        }
+
+        previewSourceRef.current = null
+        if (!loopPreviewEnabledRef.current) {
+          selectionPreviewOffsetSecRef.current = 0
+          stopPlayheadTracking()
+          setTransportState('stop')
+        }
+      }
+
+      const safeOffset = clamp(offsetSeconds, 0, Math.max(0, buffer.duration - 0.001))
+      selectionPreviewStartedAtSecRef.current = ctx.currentTime
+      previewSourceRef.current = source
+      source.start(0, safeOffset)
+      setTransportState('play')
+      startPlayheadTracking()
+    },
+    [getAudioContext, startPlayheadTracking, stopPlayheadTracking],
+  )
+
   const stopPreview = useCallback(() => {
+    const ws = wavesurferRef.current
+    if (ws) {
+      const transport = ws as WaveSurfer & { stop?: () => void; pause?: () => void }
+      if (transport.stop) {
+        transport.stop()
+      } else if (transport.pause) {
+        transport.pause()
+      }
+    }
+
     if (previewSourceRef.current) {
       previewSourceRef.current.onended = null
       previewSourceRef.current.stop()
       previewSourceRef.current.disconnect()
       previewSourceRef.current = null
     }
-    setIsPlayingPreview(false)
-  }, [])
+
+    stopPlayheadTracking()
+    selectionPreviewOffsetSecRef.current = 0
+    setTransportState('stop')
+  }, [stopPlayheadTracking])
 
   const playBuffer = useCallback(
-    async (buffer: AudioBuffer) => {
+    async (buffer: AudioBuffer, options?: { loop?: boolean }) => {
       stopPreview()
       const ctx = getAudioContext()
       if (ctx.state !== 'running') {
@@ -277,14 +396,15 @@ function App() {
 
       const source = ctx.createBufferSource()
       source.buffer = buffer
+      source.loop = options?.loop ?? false
       source.connect(ctx.destination)
       source.onended = () => {
         previewSourceRef.current = null
-        setIsPlayingPreview(false)
+        setTransportState('stop')
       }
       previewSourceRef.current = source
       source.start()
-      setIsPlayingPreview(true)
+      setTransportState('play')
     },
     [getAudioContext, stopPreview],
   )
@@ -469,6 +589,10 @@ function App() {
     setRegionStart(0)
     setRegionEnd(dur)
     setCrossfadeMaxSec(DEFAULT_CROSSFADE_MAX_SEC)
+    ;(wavesurferRef.current as WaveSurfer & {
+      setOptions?: (options: { cursorWidth: number }) => void
+    })?.setOptions?.({ cursorWidth: 0 })
+    setTransportState('stop')
     applyWaveColors()
   }, [applyWaveColors, audioBuffer])
 
@@ -594,16 +718,75 @@ function App() {
       return
     }
 
-    const ctx = getAudioContext()
+    const ws = wavesurferRef.current
+    if (!ws) {
+      return
+    }
+
+    if (transportState === 'pause' && selectionPreviewBufferRef.current) {
+      await startSelectionPreview(selectionPreviewOffsetSecRef.current)
+      setMessage('Previewing selection')
+      return
+    }
+
+    stopPreview()
     const { startSample, endSample } = ensureSelectionSamples(audioBuffer, false)
-    const length = Math.max(1, endSample - startSample)
-    const out = ctx.createBuffer(audioBuffer.numberOfChannels, length, audioBuffer.sampleRate)
+    const startSeconds = startSample / audioBuffer.sampleRate
+    const endSeconds = endSample / audioBuffer.sampleRate
+    const durationSeconds = Math.max(0.001, endSeconds - startSeconds)
+    const ctx = getAudioContext()
+    const out = ctx.createBuffer(
+      audioBuffer.numberOfChannels,
+      Math.max(1, endSample - startSample),
+      audioBuffer.sampleRate,
+    )
+
     for (let ch = 0; ch < audioBuffer.numberOfChannels; ch += 1) {
       out.copyToChannel(audioBuffer.getChannelData(ch).subarray(startSample, endSample), ch)
     }
 
-    await playBuffer(out)
-  }, [audioBuffer, ensureSelectionSamples, getAudioContext, playBuffer])
+    selectionPreviewBufferRef.current = out
+    selectionPreviewStartSecRef.current = startSeconds
+    selectionPreviewDurationSecRef.current = durationSeconds
+    selectionPreviewOffsetSecRef.current = 0
+
+    ;(ws as WaveSurfer & { setOptions?: (options: { cursorWidth: number }) => void }).setOptions?.({
+      cursorWidth: 2,
+    })
+    ;(ws as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(startSeconds)
+    await startSelectionPreview(0)
+    setMessage('Previewing selection')
+  }, [
+    audioBuffer,
+    ensureSelectionSamples,
+    getAudioContext,
+    startSelectionPreview,
+    stopPreview,
+    transportState,
+  ])
+
+  const pauseSelection = useCallback(() => {
+    const source = previewSourceRef.current
+    const buffer = selectionPreviewBufferRef.current
+    const ctx = contextRef.current
+    if (!source || !buffer || !ctx) {
+      return
+    }
+
+    const elapsed =
+      selectionPreviewOffsetSecRef.current +
+      Math.max(0, ctx.currentTime - selectionPreviewStartedAtSecRef.current)
+    selectionPreviewOffsetSecRef.current = loopPreviewEnabledRef.current
+      ? elapsed % selectionPreviewDurationSecRef.current
+      : Math.min(elapsed, selectionPreviewDurationSecRef.current)
+
+    source.onended = null
+    source.stop()
+    source.disconnect()
+    previewSourceRef.current = null
+    stopPlayheadTracking()
+    setTransportState('pause')
+  }, [stopPlayheadTracking])
 
   const previewProcessed = useCallback(async () => {
     if (!audioBuffer) {
@@ -612,7 +795,7 @@ function App() {
     setError('')
     try {
       const out = processByMode(audioBuffer)
-      await playBuffer(out)
+      await playBuffer(out, { loop: true })
       setMessage(`Previewing ${mode.toUpperCase()} output`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Preview failed.')
@@ -732,6 +915,11 @@ function App() {
       styleRegionRef.current(current.start, current.end, (current as { element?: HTMLElement }).element)
       applyWaveColorsRef.current(true)
       syncRegion(current.start, current.end)
+      ;(ws as WaveSurfer & { setOptions?: (options: { cursorWidth: number }) => void }).setOptions?.({
+        cursorWidth: 2,
+      })
+      ;(ws as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(current.start)
+      setTransportState('stop')
     })
 
     regions.on('region-updated', (region) => {
@@ -739,6 +927,11 @@ function App() {
       styleRegionRef.current(region.start, region.end, (region as { element?: HTMLElement }).element)
       applyWaveColorsRef.current(true)
       syncRegion(region.start, region.end)
+      ;(ws as WaveSurfer & { setOptions?: (options: { cursorWidth: number }) => void }).setOptions?.({
+        cursorWidth: 2,
+      })
+      ;(ws as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(region.start)
+      setTransportState('stop')
     })
 
     regions.on('region-removed', () => {
@@ -792,11 +985,10 @@ function App() {
 
     ws.on('interaction', () => {
       stopPreview()
-      setIsPlayingPreview(false)
     })
 
     ws.on('finish', () => {
-      setIsPlayingPreview(false)
+      setTransportState('stop')
     })
 
     return () => {
@@ -865,6 +1057,19 @@ function App() {
     return () => window.removeEventListener('keydown', onKeydown)
   }, [exportWav, previewSelection])
 
+  const toggleLoopPreview = useCallback(() => {
+    setLoopPreviewEnabled((prev) => {
+      const next = !prev
+      loopPreviewEnabledRef.current = next
+
+      if (previewSourceRef.current) {
+        previewSourceRef.current.loop = next
+      }
+
+      return next
+    })
+  }, [])
+
   const canProcess = Boolean(audioBuffer) && !isBusy
   const hasCutUndo = undoCount > 0
 
@@ -899,7 +1104,6 @@ function App() {
             normalizeOutput={normalizeOutput}
             canProcess={canProcess}
             hasCutUndo={hasCutUndo}
-            isPlayingPreview={isPlayingPreview}
             onModeChange={setMode}
             onLoopCrossfadeChange={setLoopCrossfadeSec}
             onLoopCurveChange={setLoopCurve}
@@ -912,9 +1116,7 @@ function App() {
             onWheelNudge={onWheelNudge}
             onApplyCut={applyCut}
             onUndoCut={undoCut}
-            onPreviewSelection={() => void previewSelection()}
             onPreviewProcessed={() => void previewProcessed()}
-            onStopPreview={stopPreview}
             onExportWav={exportWav}
           />
         ) : null}
@@ -924,11 +1126,18 @@ function App() {
           regionStart={regionStart}
           regionEnd={regionEnd}
           audioLoaded={Boolean(audioBuffer)}
+          canProcess={canProcess}
           showWaveform={showWaveform}
           waveformRef={waveformRef}
           waveColor={WAVEFORM_BASE_COLOR}
+          transportState={transportState}
+          loopPreviewEnabled={loopPreviewEnabled}
           onDrop={onDrop}
           onFileInput={onFileInput}
+          onPlaySelection={() => void previewSelection()}
+          onPauseSelection={pauseSelection}
+          onStopPreview={stopPreview}
+          onToggleLoopPreview={toggleLoopPreview}
         />
       </main>
     </div>
