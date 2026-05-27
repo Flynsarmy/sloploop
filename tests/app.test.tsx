@@ -8,8 +8,9 @@ import App from '../src/App'
 type WaveSurferHandler = (...args: unknown[]) => void
 
 type FakeWaveSurfer = {
-  loadBlob: ReturnType<typeof vi.fn>
+  load: ReturnType<typeof vi.fn>
   getDuration: ReturnType<typeof vi.fn>
+  getDecodedData: ReturnType<typeof vi.fn>
   zoom: ReturnType<typeof vi.fn>
   play: ReturnType<typeof vi.fn>
   on: ReturnType<typeof vi.fn>
@@ -20,8 +21,9 @@ type FakeWaveSurfer = {
 const wsHandlers = new Map<string, WaveSurferHandler>()
 
 const fakeWaveSurfer: FakeWaveSurfer = {
-  loadBlob: vi.fn(async () => undefined),
+  load: vi.fn(async () => undefined),
   getDuration: vi.fn(() => 2.5),
+  getDecodedData: vi.fn(() => ({ samples: [] })),
   zoom: vi.fn(),
   play: vi.fn(async () => undefined),
   on: vi.fn((event: string, handler: WaveSurferHandler) => {
@@ -141,7 +143,7 @@ describe('Sloploop', () => {
       expect(screen.getByText(/Loaded car-idle-106494\.mp3/)).toBeInTheDocument()
     })
 
-    expect(fakeWaveSurfer.loadBlob).toHaveBeenCalledTimes(1)
+    expect(fakeWaveSurfer.load).toHaveBeenCalledTimes(1)
     expect(fakeWaveSurfer.zoom).toHaveBeenCalled()
     expect(screen.queryByText('No audio loaded')).not.toBeInTheDocument()
   })

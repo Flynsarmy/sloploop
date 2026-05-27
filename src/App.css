@@ -50,6 +50,10 @@
   gap: 16px;
 }
 
+.workspace--empty {
+  grid-template-columns: 1fr;
+}
+
 .panel {
   border: 1px solid var(--panel-border);
   border-radius: 16px;
@@ -82,15 +86,6 @@
 
 .file-picker input {
   display: none;
-}
-
-.drop-zone {
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px dashed var(--panel-border);
-  color: var(--muted);
-  text-align: center;
-  font-size: 14px;
 }
 
 .mode-tabs {
@@ -280,7 +275,11 @@ button:disabled {
 .wave-shell {
   border: 1px solid var(--panel-border);
   border-radius: 12px;
-  overflow: hidden;background: #222222;
+  overflow: hidden;
+  background: #222222;
+  min-height: 260px;
+  position: relative;
+  display: flex;
 }
 
 .waveform {
@@ -288,16 +287,37 @@ button:disabled {
   min-height: 260px;
 }
 
+.waveform.is-hidden {
+  display: none;
+}
+
+.wave-empty-state {
+  min-height: 260px;
+  width: 100%;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--panel-border);
+  margin: 12px;
+  padding: 16px;
+  flex: 1;
+}
+
+.wave-empty-state p {
+  margin: 0;
+}
+
+.wave-empty-picker {
+  width: auto;
+  min-width: 160px;
+  margin-top: 10px;
+}
+
 .waveform ::part(wave) {
-  background: #4A9ABA;
-}
-
-.waveform.has-selection ::part(wave) {
-  background: #253840;
-}
-
-.waveform.has-selection ::part(cursor) {
-  opacity: 0;
+  background: var(--waveform-base-color, #4A9ABA);
 }
 
 .waveform ::part(region-handle) {

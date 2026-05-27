@@ -1,14 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ChangeEvent, DragEvent, WheelEvent as ReactWheelEvent } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js'
+import AppHeader from './components/AppHeader'
+import ControlsPanel from './components/ControlsPanel'
+import EditorPanel from './components/EditorPanel'
+import type { LoopCurve, Mode } from './types/app'
 import './App.css'
 
-type Mode = 'loop' | 'clip' | 'cut'
-type LoopCurve = 'smoothstep' | 'equal-power'
+declare global {
+  interface Window {
+    wavesurfer: WaveSurfer | null
+  }
+}
 
 const MAX_FILE_DURATION_SEC = 600
 const WAVEFORM_BASE_COLOR = '#4A9ABA'
-const WAVEFORM_SELECTION_OUTSIDE_COLOR = '#253840'
 const CROSSFADE_COLOR = 'var(--accent-orange)'
 const SELECTION_FILL_COLOR = 'rgba(50, 50, 50, 0.45)'
 const SELECTION_CROSSFADE_FILL = 'color-mix(in srgb, var(--accent-orange) 72%, transparent)'
@@ -181,7 +188,6 @@ function App() {
   const [isPlayingPreview, setIsPlayingPreview] = useState(false)
   const [undoCount, setUndoCount] = useState(0)
   const [isWaveformReady, setIsWaveformReady] = useState(false)
-  const [hasSelection, setHasSelection] = useState(false)
 
   const waveformRef = useRef<HTMLDivElement | null>(null)
   const wavesurferRef = useRef<WaveSurfer | null>(null)
@@ -196,9 +202,6 @@ function App() {
   const applyWaveColorsRef = useRef<(selectionActive: boolean) => void>(() => {})
   const clearSelectionRef = useRef<(newDuration?: number) => void>(() => {})
   const applySelectionCrossfadePresetRef = useRef<(start: number, end: number) => void>(() => {})
-
-  const duration = audioBuffer?.duration ?? 0
-  const regionDuration = Math.max(0, regionEnd - regionStart)
 
   const getSelectionCrossfadeSeconds = useCallback(() => {
     if (mode === 'loop') {
@@ -240,22 +243,11 @@ function App() {
     [getSelectionCrossfadeSeconds],
   )
 
-  const applyWaveColors = useCallback((selectionActive: boolean) => {
+  const applyWaveColors = useCallback(() => {
     const container = waveformRef.current
     if (!container) {
       return
     }
-
-    const ws = wavesurferRef.current
-    if (ws) {
-      const waveColor = selectionActive ? WAVEFORM_SELECTION_OUTSIDE_COLOR : WAVEFORM_BASE_COLOR
-      ws.setOptions({
-        waveColor,
-        progressColor: waveColor,
-      })
-    }
-
-    container.classList.toggle('has-selection', selectionActive)
   }, [])
 
   const getAudioContext = useCallback(() => {
@@ -476,10 +468,9 @@ function App() {
     const dur = newDuration ?? wavesurferRef.current?.getDuration() ?? audioBuffer?.duration ?? 0
     setRegionStart(0)
     setRegionEnd(dur)
-    setHasSelection(false)
     setCrossfadeMaxSec(DEFAULT_CROSSFADE_MAX_SEC)
-    applyWaveColors(false)
-  }, [applyWaveColors])
+    applyWaveColors()
+  }, [applyWaveColors, audioBuffer])
 
   useEffect(() => {
     styleRegionRef.current = styleRegion
@@ -560,7 +551,7 @@ function App() {
   )
 
   const onFileInput = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
+    async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0]
       if (!file) {
         return
@@ -572,7 +563,7 @@ function App() {
   )
 
   const onDrop = useCallback(
-    async (event: React.DragEvent<HTMLDivElement>) => {
+    async (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault()
       const file = event.dataTransfer.files?.[0]
       if (file) {
@@ -584,7 +575,7 @@ function App() {
 
   const onWheelNudge = useCallback(
     (
-      event: React.WheelEvent<HTMLInputElement>,
+      event: ReactWheelEvent<HTMLInputElement>,
       value: number,
       setter: (v: number) => void,
       step: number,
@@ -698,7 +689,7 @@ function App() {
       container: waveformRef.current,
       waveColor: WAVEFORM_BASE_COLOR,
       progressColor: WAVEFORM_BASE_COLOR,
-      cursorColor: 'var(--accent-orange)',
+      cursorWidth: 0,
       height: 220,
       barWidth: 2,
       barGap: 1,
@@ -709,10 +700,17 @@ function App() {
     })
 
     wavesurferRef.current = ws
+    window.wavesurfer = ws
     regionsRef.current = regions
     setIsWaveformReady(false)
 
-    const wrapper = (ws as WaveSurfer & { getWrapper: () => HTMLElement }).getWrapper()
+    const wrapper =
+      typeof (ws as WaveSurfer & { getWrapper?: () => HTMLElement }).getWrapper === 'function'
+        ? (ws as WaveSurfer & { getWrapper: () => HTMLElement }).getWrapper()
+        : waveformRef.current
+    if (!wrapper) {
+      return
+    }
     const scrollContainer = wrapper.parentElement instanceof HTMLElement ? wrapper.parentElement : wrapper
 
     regions.enableDragSelection({
@@ -732,7 +730,6 @@ function App() {
       })
       applySelectionCrossfadePresetRef.current(current.start, current.end)
       styleRegionRef.current(current.start, current.end, (current as { element?: HTMLElement }).element)
-      setHasSelection(true)
       applyWaveColorsRef.current(true)
       syncRegion(current.start, current.end)
     })
@@ -740,14 +737,12 @@ function App() {
     regions.on('region-updated', (region) => {
       applySelectionCrossfadePresetRef.current(region.start, region.end)
       styleRegionRef.current(region.start, region.end, (region as { element?: HTMLElement }).element)
-      setHasSelection(true)
       applyWaveColorsRef.current(true)
       syncRegion(region.start, region.end)
     })
 
     regions.on('region-removed', () => {
       const active = regions.getRegions().length > 0
-      setHasSelection(active)
       applyWaveColorsRef.current(active)
     })
 
@@ -813,6 +808,7 @@ function App() {
       scrollContainer.removeEventListener('wheel', onWheel)
       ws.destroy()
       wavesurferRef.current = null
+      window.wavesurfer = null
       regionsRef.current = null
     }
   }, [stopPreview])
@@ -872,227 +868,66 @@ function App() {
   const canProcess = Boolean(audioBuffer) && !isBusy
   const hasCutUndo = undoCount > 0
 
-  const modeHelp = useMemo(() => {
-    if (mode === 'loop') {
-      return 'Create a seamless loop by blending end into beginning.'
-    }
-    if (mode === 'clip') {
-      return 'Export a clean clip from the selected region with optional fades.'
-    }
-    return 'Remove the selected range, crossfade the seam, then continue editing.'
-  }, [mode])
+  const modeHelp =
+    mode === 'loop'
+      ? 'Create a seamless loop by blending end into beginning.'
+      : mode === 'clip'
+        ? 'Export a clean clip from the selected region with optional fades.'
+        : 'Remove the selected range, crossfade the seam, then continue editing.'
+
+  const showWaveform = Boolean(audioBuffer) && isWaveformReady
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <h1>Sloploop</h1>
-          <p>Loop crafting and clip cleanup for game audio in the browser.</p>
-        </div>
-        <div className="status-row">
-          <span>{message}</span>
-          {error ? <span className="error-chip">{error}</span> : null}
-        </div>
-      </header>
+      <AppHeader message={message} error={error} />
 
-      <main className="workspace">
-        <section className="panel controls">
-          <label className="file-picker">
-            <input type="file" accept="audio/*,.aiff,.aif,.wav,.ogg,.mp3" onChange={onFileInput} />
-            Open File
-          </label>
+      <main className={`workspace${audioBuffer ? '' : ' workspace--empty'}`}>
+        {audioBuffer ? (
+          <ControlsPanel
+            mode={mode}
+            modeHelp={modeHelp}
+            loopCrossfadeSec={loopCrossfadeSec}
+            crossfadeMaxSec={crossfadeMaxSec}
+            loopCurve={loopCurve}
+            snapToZeroCrossing={snapToZeroCrossing}
+            embedLoopSidecar={embedLoopSidecar}
+            clipFadeInMs={clipFadeInMs}
+            clipFadeOutMs={clipFadeOutMs}
+            cutCrossfadeSec={cutCrossfadeSec}
+            normalizeOutput={normalizeOutput}
+            canProcess={canProcess}
+            hasCutUndo={hasCutUndo}
+            isPlayingPreview={isPlayingPreview}
+            onModeChange={setMode}
+            onLoopCrossfadeChange={setLoopCrossfadeSec}
+            onLoopCurveChange={setLoopCurve}
+            onSnapToZeroCrossingChange={setSnapToZeroCrossing}
+            onEmbedLoopSidecarChange={setEmbedLoopSidecar}
+            onClipFadeInChange={setClipFadeInMs}
+            onClipFadeOutChange={setClipFadeOutMs}
+            onCutCrossfadeChange={setCutCrossfadeSec}
+            onNormalizeOutputChange={setNormalizeOutput}
+            onWheelNudge={onWheelNudge}
+            onApplyCut={applyCut}
+            onUndoCut={undoCut}
+            onPreviewSelection={() => void previewSelection()}
+            onPreviewProcessed={() => void previewProcessed()}
+            onStopPreview={stopPreview}
+            onExportWav={exportWav}
+          />
+        ) : null}
 
-          <div
-            className="drop-zone"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={onDrop}
-            role="button"
-            tabIndex={0}
-          >
-            Drag and drop WAV, OGG, MP3, AIFF
-          </div>
-
-          <div className="mode-tabs">
-            {(['loop', 'clip', 'cut'] as Mode[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                className={item === mode ? 'active' : ''}
-                onClick={() => setMode(item)}
-              >
-                {item.toUpperCase()}
-              </button>
-            ))}
-          </div>
-
-          <p className="mode-help">{modeHelp}</p>
-
-          <div className="field-block">
-            <h2>Waveform</h2>
-            <span>Scroll wheel over waveform to zoom.</span>
-            <span>Middle mouse drag on waveform to pan.</span>
-            <div className="grid-info">
-              <span>Duration: {duration.toFixed(2)}s</span>
-              <span>Selection: {hasSelection ? `${regionDuration.toFixed(2)}s` : 'None'}</span>
-            </div>
-          </div>
-
-          {mode === 'loop' ? (
-            <div className="field-block">
-              <h2>Loop Settings</h2>
-              <label>
-                Crossfade seconds ({loopCrossfadeSec.toFixed(3)}s)
-                <input
-                  type="range"
-                  min={0.001}
-                  max={crossfadeMaxSec}
-                  step={0.001}
-                  value={loopCrossfadeSec}
-                  onChange={(event) => setLoopCrossfadeSec(Number(event.target.value))}
-                />
-              </label>
-              <label>
-                Curve
-                <select
-                  value={loopCurve}
-                  onChange={(event) => setLoopCurve(event.target.value as LoopCurve)}
-                >
-                  <option value="smoothstep">Smoothstep</option>
-                  <option value="equal-power">Equal power</option>
-                </select>
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={snapToZeroCrossing}
-                  onChange={(event) => setSnapToZeroCrossing(event.target.checked)}
-                />
-                Snap region bounds to nearest zero crossing
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={embedLoopSidecar}
-                  onChange={(event) => setEmbedLoopSidecar(event.target.checked)}
-                />
-                Export loop sidecar JSON metadata
-              </label>
-            </div>
-          ) : null}
-
-          {mode === 'clip' ? (
-            <div className="field-block">
-              <h2>Clip Settings</h2>
-              <label>
-                Fade in ms
-                <input
-                  type="number"
-                  min={0}
-                  max={3000}
-                  value={clipFadeInMs}
-                  onWheel={(event) =>
-                    onWheelNudge(event, clipFadeInMs, setClipFadeInMs, 2, 0, 3000)
-                  }
-                  onChange={(event) => setClipFadeInMs(Number(event.target.value))}
-                />
-              </label>
-              <label>
-                Fade out ms
-                <input
-                  type="number"
-                  min={0}
-                  max={3000}
-                  value={clipFadeOutMs}
-                  onWheel={(event) =>
-                    onWheelNudge(event, clipFadeOutMs, setClipFadeOutMs, 2, 0, 3000)
-                  }
-                  onChange={(event) => setClipFadeOutMs(Number(event.target.value))}
-                />
-              </label>
-            </div>
-          ) : null}
-
-          {mode === 'cut' ? (
-            <div className="field-block">
-              <h2>Cut Settings</h2>
-              <label>
-                Seam crossfade seconds ({cutCrossfadeSec.toFixed(3)}s)
-                <input
-                  type="range"
-                  min={0}
-                  max={crossfadeMaxSec}
-                  step={0.001}
-                  value={cutCrossfadeSec}
-                  onChange={(event) => setCutCrossfadeSec(Number(event.target.value))}
-                />
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={snapToZeroCrossing}
-                  onChange={(event) => setSnapToZeroCrossing(event.target.checked)}
-                />
-                Snap region bounds to nearest zero crossing
-              </label>
-              <div className="cut-actions">
-                <button type="button" onClick={applyCut} disabled={!canProcess}>
-                  Apply Cut
-                </button>
-                <button type="button" onClick={undoCut} disabled={!hasCutUndo}>
-                  Undo Cut
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="field-block">
-            <h2>Output</h2>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={normalizeOutput}
-                onChange={(event) => setNormalizeOutput(event.target.checked)}
-              />
-              Normalize exported WAV
-            </label>
-            <div className="action-row">
-              <button type="button" onClick={() => void previewSelection()} disabled={!canProcess}>
-                Preview Selection
-              </button>
-              <button type="button" onClick={() => void previewProcessed()} disabled={!canProcess}>
-                Preview Processed
-              </button>
-              <button type="button" onClick={stopPreview} disabled={!isPlayingPreview}>
-                Stop
-              </button>
-              <button type="button" className="primary" onClick={exportWav} disabled={!canProcess}>
-                Export WAV
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel editor">
-          <div className="editor-header">
-            <div>
-              <h2>{sourceName || 'No source loaded'}</h2>
-              <p>Space = preview selection, E = export WAV</p>
-            </div>
-            <div className="selection-readout">
-              <span>Start: {regionStart.toFixed(3)}s</span>
-              <span>End: {regionEnd.toFixed(3)}s</span>
-            </div>
-          </div>
-          <div className="wave-shell">
-            <div ref={waveformRef} className="waveform" />
-          </div>
-
-          <div className="hint-strip">
-            <span>Drag region handles to define selection.</span>
-            <span>Mouse wheel over numeric fields for fine adjustments.</span>
-            <span>10-minute import cap to keep browser memory stable.</span>
-          </div>
-        </section>
+        <EditorPanel
+          sourceName={sourceName}
+          regionStart={regionStart}
+          regionEnd={regionEnd}
+          audioLoaded={Boolean(audioBuffer)}
+          showWaveform={showWaveform}
+          waveformRef={waveformRef}
+          waveColor={WAVEFORM_BASE_COLOR}
+          onDrop={onDrop}
+          onFileInput={onFileInput}
+        />
       </main>
     </div>
   )
