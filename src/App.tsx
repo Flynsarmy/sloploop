@@ -6,7 +6,6 @@ import AppHeader from './components/AppHeader'
 import ControlsPanel from './components/ControlsPanel'
 import EditorPanel from './components/EditorPanel'
 import type { LoopCurve, Mode } from './types/app'
-import './App.css'
 
 declare global {
   interface Window {
@@ -16,9 +15,10 @@ declare global {
 
 const MAX_FILE_DURATION_SEC = 600
 const WAVEFORM_BASE_COLOR = '#4A9ABA'
-const CROSSFADE_COLOR = 'var(--accent-orange)'
+const CROSSFADE_COLOR = 'var(--color-accent-orange)'
 const SELECTION_FILL_COLOR = 'rgba(50, 50, 50, 0.45)'
-const SELECTION_CROSSFADE_FILL = 'color-mix(in srgb, var(--accent-orange) 72%, transparent)'
+const SELECTION_CROSSFADE_FILL =
+  'color-mix(in srgb, var(--color-accent-orange) 72%, transparent)'
 const DEFAULT_CROSSFADE_MAX_SEC = 5
 const SELECTION_CROSSFADE_MAX_SEC = 0.2
 const MIN_ZOOM = 20
@@ -878,10 +878,12 @@ function App() {
   const showWaveform = Boolean(audioBuffer) && isWaveformReady
 
   return (
-    <div className="app-shell">
+    <div className="mx-auto grid w-[min(1400px,calc(100%-32px))] gap-4 py-5">
       <AppHeader message={message} error={error} />
 
-      <main className={`workspace${audioBuffer ? '' : ' workspace--empty'}`}>
+      <main
+        className={audioBuffer ? 'grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]' : 'grid gap-4'}
+      >
         {audioBuffer ? (
           <ControlsPanel
             mode={mode}

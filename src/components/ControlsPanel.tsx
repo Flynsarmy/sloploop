@@ -45,6 +45,34 @@ type NumberInputEvent = ChangeEvent<HTMLInputElement>
 type CheckboxEvent = ChangeEvent<HTMLInputElement>
 type SelectEvent = ChangeEvent<HTMLSelectElement>
 
+const panelClassName =
+  'grid max-h-none content-start gap-3 overflow-auto rounded-2xl border border-panel-border bg-panel-bg p-4 xl:max-h-[calc(100svh-120px)]'
+const sectionClassName = 'grid gap-2 rounded-xl border border-panel-border p-3'
+const headingClassName = 'm-0 mb-1 text-[15px] uppercase tracking-[0.08em] text-[#d8ccf1]'
+const labelClassName = 'grid gap-1.5 text-[13px] text-app-muted'
+const checkLabelClassName = 'grid grid-cols-[auto_1fr] items-center gap-2 text-[13px] text-app-muted'
+const inputClassName =
+  'rounded-none border border-panel-border bg-control-bg px-2.5 py-2 text-app-text outline-none transition focus:border-accent-orange'
+const tabBaseClassName =
+  'rounded-none border border-panel-border bg-control-bg px-2 py-2.5 font-medium tracking-[0.08em] text-white transition disabled:cursor-not-allowed disabled:opacity-50'
+const inactiveTabClassName = `${tabBaseClassName} hover:border-app-muted`
+const activeTabClassName = `${tabBaseClassName} !border-accent-orange !text-accent-orange`
+const actionButtonClassName =
+  'rounded-none border border-panel-border bg-control-bg px-2.5 py-2 text-white transition hover:border-app-muted disabled:cursor-not-allowed disabled:opacity-50'
+const primaryButtonClassName =
+  'rounded-none border border-accent-orange bg-control-bg px-2.5 py-2 text-accent-orange transition hover:bg-accent-orange/10 disabled:cursor-not-allowed disabled:opacity-50'
+
+function Checkbox({ checked, onChange }: { checked: boolean; onChange: (event: CheckboxEvent) => void }) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      className="mt-0 size-[18px] rounded-none border border-panel-border bg-control-bg text-accent-orange accent-accent-orange"
+    />
+  )
+}
+
 function LoopSettings({
   loopCrossfadeSec,
   crossfadeMaxSec,
@@ -67,9 +95,9 @@ function LoopSettings({
   onEmbedLoopSidecarChange: (checked: boolean) => void
 }) {
   return (
-    <div className="field-block">
-      <h2>Loop Settings</h2>
-      <label>
+    <div className={sectionClassName}>
+      <h2 className={headingClassName}>Loop Settings</h2>
+      <label className={labelClassName}>
         Crossfade seconds ({loopCrossfadeSec.toFixed(3)}s)
         <input
           type="range"
@@ -78,29 +106,29 @@ function LoopSettings({
           step={0.001}
           value={loopCrossfadeSec}
           onChange={(event) => onLoopCrossfadeChange(Number(event.target.value))}
+          className="w-full accent-accent-orange"
         />
       </label>
-      <label>
+      <label className={labelClassName}>
         Curve
         <select
           value={loopCurve}
           onChange={(event: SelectEvent) => onLoopCurveChange(event.target.value as LoopCurve)}
+          className={inputClassName}
         >
           <option value="smoothstep">Smoothstep</option>
           <option value="equal-power">Equal power</option>
         </select>
       </label>
-      <label className="check">
-        <input
-          type="checkbox"
+      <label className={checkLabelClassName}>
+        <Checkbox
           checked={snapToZeroCrossing}
           onChange={(event: CheckboxEvent) => onSnapToZeroCrossingChange(event.target.checked)}
         />
         Snap region bounds to nearest zero crossing
       </label>
-      <label className="check">
-        <input
-          type="checkbox"
+      <label className={checkLabelClassName}>
+        <Checkbox
           checked={embedLoopSidecar}
           onChange={(event: CheckboxEvent) => onEmbedLoopSidecarChange(event.target.checked)}
         />
@@ -124,9 +152,9 @@ function ClipSettings({
   onWheelNudge: ControlsPanelProps['onWheelNudge']
 }) {
   return (
-    <div className="field-block">
-      <h2>Clip Settings</h2>
-      <label>
+    <div className={sectionClassName}>
+      <h2 className={headingClassName}>Clip Settings</h2>
+      <label className={labelClassName}>
         Fade in ms
         <input
           type="number"
@@ -135,9 +163,10 @@ function ClipSettings({
           value={clipFadeInMs}
           onWheel={(event) => onWheelNudge(event, clipFadeInMs, onClipFadeInChange, 2, 0, 3000)}
           onChange={(event: NumberInputEvent) => onClipFadeInChange(Number(event.target.value))}
+          className={inputClassName}
         />
       </label>
-      <label>
+      <label className={labelClassName}>
         Fade out ms
         <input
           type="number"
@@ -146,6 +175,7 @@ function ClipSettings({
           value={clipFadeOutMs}
           onWheel={(event) => onWheelNudge(event, clipFadeOutMs, onClipFadeOutChange, 2, 0, 3000)}
           onChange={(event: NumberInputEvent) => onClipFadeOutChange(Number(event.target.value))}
+          className={inputClassName}
         />
       </label>
     </div>
@@ -174,9 +204,9 @@ function CutSettings({
   onUndoCut: () => void
 }) {
   return (
-    <div className="field-block">
-      <h2>Cut Settings</h2>
-      <label>
+    <div className={sectionClassName}>
+      <h2 className={headingClassName}>Cut Settings</h2>
+      <label className={labelClassName}>
         Seam crossfade seconds ({cutCrossfadeSec.toFixed(3)}s)
         <input
           type="range"
@@ -185,21 +215,31 @@ function CutSettings({
           step={0.001}
           value={cutCrossfadeSec}
           onChange={(event) => onCutCrossfadeChange(Number(event.target.value))}
+          className="w-full accent-accent-orange"
         />
       </label>
-      <label className="check">
-        <input
-          type="checkbox"
+      <label className={checkLabelClassName}>
+        <Checkbox
           checked={snapToZeroCrossing}
           onChange={(event: CheckboxEvent) => onSnapToZeroCrossingChange(event.target.checked)}
         />
         Snap region bounds to nearest zero crossing
       </label>
-      <div className="cut-actions">
-        <button type="button" onClick={onApplyCut} disabled={!canProcess}>
+      <div className="grid gap-2">
+        <button
+          type="button"
+          onClick={onApplyCut}
+          disabled={!canProcess}
+          className={actionButtonClassName}
+        >
           Apply Cut
         </button>
-        <button type="button" onClick={onUndoCut} disabled={!hasCutUndo}>
+        <button
+          type="button"
+          onClick={onUndoCut}
+          disabled={!hasCutUndo}
+          className={actionButtonClassName}
+        >
           Undo Cut
         </button>
       </div>
@@ -227,27 +267,46 @@ function OutputSettings({
   onExportWav: () => void
 }) {
   return (
-    <div className="field-block">
-      <h2>Output</h2>
-      <label className="check">
-        <input
-          type="checkbox"
+    <div className={sectionClassName}>
+      <h2 className={headingClassName}>Output</h2>
+      <label className={checkLabelClassName}>
+        <Checkbox
           checked={normalizeOutput}
           onChange={(event: CheckboxEvent) => onNormalizeOutputChange(event.target.checked)}
         />
         Normalize exported WAV
       </label>
-      <div className="action-row">
-        <button type="button" onClick={onPreviewSelection} disabled={!canProcess}>
+      <div className="grid gap-2">
+        <button
+          type="button"
+          onClick={onPreviewSelection}
+          disabled={!canProcess}
+          className={actionButtonClassName}
+        >
           Preview Selection
         </button>
-        <button type="button" onClick={onPreviewProcessed} disabled={!canProcess}>
+        <button
+          type="button"
+          onClick={onPreviewProcessed}
+          disabled={!canProcess}
+          className={actionButtonClassName}
+        >
           Preview Processed
         </button>
-        <button type="button" onClick={onStopPreview} disabled={!isPlayingPreview}>
+        <button
+          type="button"
+          onClick={onStopPreview}
+          disabled={!isPlayingPreview}
+          className={actionButtonClassName}
+        >
           Stop
         </button>
-        <button type="button" className="primary" onClick={onExportWav} disabled={!canProcess}>
+        <button
+          type="button"
+          className={primaryButtonClassName}
+          onClick={onExportWav}
+          disabled={!canProcess}
+        >
           Export WAV
         </button>
       </div>
@@ -288,13 +347,13 @@ function ControlsPanel({
   onExportWav,
 }: ControlsPanelProps) {
   return (
-    <section className="panel controls">
-      <div className="mode-tabs">
+    <section className={panelClassName}>
+      <div className="grid grid-cols-3 gap-2">
         {(['loop', 'clip', 'cut'] as Mode[]).map((item) => (
           <button
             key={item}
             type="button"
-            className={item === mode ? 'active' : ''}
+            className={item === mode ? activeTabClassName : inactiveTabClassName}
             onClick={() => onModeChange(item)}
           >
             {item.toUpperCase()}
@@ -302,7 +361,7 @@ function ControlsPanel({
         ))}
       </div>
 
-      <p className="mode-help">{modeHelp}</p>
+      <p className="m-0 text-sm text-app-muted">{modeHelp}</p>
 
       {mode === 'loop' ? (
         <LoopSettings
