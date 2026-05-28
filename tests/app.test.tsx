@@ -523,7 +523,7 @@ describe('Sloploop', () => {
     })
   })
 
-  it('sets the crossfade slider max to 80% of the selection and clamps the value to 200ms', async () => {
+  it('sets the crossfade slider max to 45% of the selection and clamps the value to 200ms', async () => {
     render(<App />)
     await loadMp3File()
     await waitForWaveformReady()
@@ -532,8 +532,27 @@ describe('Sloploop', () => {
 
     const slider = screen.getByRole('slider') as HTMLInputElement
     await waitFor(() => {
-      expect(Number(slider.max)).toBeCloseTo(1.8, 5)
+      expect(Number(slider.max)).toBeCloseTo(1.0125, 5)
       expect(slider.value).toBe('0.2')
+    })
+  })
+
+  it('lets the crossfade seconds value be edited directly and committed with Enter', async () => {
+    render(<App />)
+    await loadMp3File()
+    await waitForWaveformReady()
+
+    const crossfadeButton = screen.getByRole('button', { name: '0.120 s' })
+    await userEvent.click(crossfadeButton)
+
+    const input = screen.getByRole('spinbutton') as HTMLInputElement
+    await userEvent.clear(input)
+    await userEvent.type(input, '0.789')
+    await userEvent.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(screen.getByText('0.789 s')).toBeInTheDocument()
+      expect(screen.getByRole('slider')).toHaveValue('0.789')
     })
   })
 

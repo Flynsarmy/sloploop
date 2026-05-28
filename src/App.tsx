@@ -21,7 +21,7 @@ const SELECTION_FILL_COLOR = 'rgba(50, 50, 50, 0.45)'
 const SELECTION_CROSSFADE_FILL =
   'color-mix(in srgb, var(--color-accent-orange) 72%, transparent)'
 const DEFAULT_CROSSFADE_MAX_SEC = 5
-const SELECTION_CROSSFADE_MAX_RATIO = 0.8
+const SELECTION_CROSSFADE_MAX_RATIO = 0.45
 const SELECTION_CROSSFADE_CURRENT_MAX_SEC = 0.2
 const MIN_ZOOM = 20
 const MAX_ZOOM = 400
@@ -256,6 +256,20 @@ function App() {
     setLoopCrossfadeSec(clamp(nextValue, 0.001, nextMax))
     setCutCrossfadeSec(clamp(nextValue, 0, nextMax))
   }, [])
+
+  const handleLoopCrossfadeChange = useCallback(
+    (value: number) => {
+      setLoopCrossfadeSec(clamp(value, 0.001, crossfadeMaxSec))
+    },
+    [crossfadeMaxSec],
+  )
+
+  const handleCutCrossfadeChange = useCallback(
+    (value: number) => {
+      setCutCrossfadeSec(clamp(value, 0, crossfadeMaxSec))
+    },
+    [crossfadeMaxSec],
+  )
 
   const styleRegion = useCallback(
     (start: number, end: number, element?: HTMLElement | null) => {
@@ -1456,13 +1470,13 @@ function App() {
             canProcess={canProcess}
             hasCutUndo={hasCutUndo}
             onModeChange={setMode}
-            onLoopCrossfadeChange={setLoopCrossfadeSec}
+            onLoopCrossfadeChange={handleLoopCrossfadeChange}
             onLoopCurveChange={setLoopCurve}
             onSnapToZeroCrossingChange={setSnapToZeroCrossing}
             onEmbedLoopSidecarChange={setEmbedLoopSidecar}
             onClipFadeInChange={setClipFadeInMs}
             onClipFadeOutChange={setClipFadeOutMs}
-            onCutCrossfadeChange={setCutCrossfadeSec}
+            onCutCrossfadeChange={handleCutCrossfadeChange}
             onWheelNudge={onWheelNudge}
             onApplyCut={applyCut}
             onUndoCut={undoCut}

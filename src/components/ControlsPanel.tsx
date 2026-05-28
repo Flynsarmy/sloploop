@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ChangeEvent, WheelEvent } from 'react'
 import type { LoopCurve, Mode } from '../types/app'
 
@@ -81,6 +82,77 @@ function Checkbox({
   )
 }
 
+function EditableSecondsValue({
+  value,
+  min,
+  max,
+  onCommit,
+}: {
+  value: number
+  min: number
+  max: number
+  onCommit: (value: number) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draftValue, setDraftValue] = useState(value.toFixed(3))
+
+  const closeEditor = (nextValue: number) => {
+    onCommit(nextValue)
+    setIsEditing(false)
+  }
+
+  const commitDraft = () => {
+    const parsedValue = Number(draftValue)
+    if (Number.isFinite(parsedValue)) {
+      closeEditor(parsedValue)
+      return
+    }
+    setIsEditing(false)
+    setDraftValue(value.toFixed(3))
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        type="number"
+        inputMode="decimal"
+        min={min}
+        max={max}
+        step={0.001}
+        value={draftValue}
+        autoFocus
+        onChange={(event) => setDraftValue(event.target.value)}
+        onBlur={commitDraft}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commitDraft()
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            setDraftValue(value.toFixed(3))
+            setIsEditing(false)
+          }
+        }}
+        className="inline-flex w-24 rounded-none border border-panel-border bg-control-bg px-2 py-1 text-accent-orange outline-none transition focus:border-accent-orange"
+      />
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setDraftValue(value.toFixed(3))
+        setIsEditing(true)
+      }}
+      className="inline-flex items-center rounded-none border border-transparent px-1 py-0.5 text-accent-orange underline decoration-dotted decoration-current underline-offset-2 transition hover:border-panel-border hover:bg-control-bg/40"
+    >
+      {value.toFixed(3)} s
+    </button>
+  )
+}
+
 function LoopSettings({
   loopCrossfadeSec,
   crossfadeMaxSec,
@@ -105,10 +177,18 @@ function LoopSettings({
   return (
     <div className={sectionClassName}>
       <h2 className={headingClassName}>Loop Settings</h2>
-      <label className={labelClassName}>
-        <span>
-          Crossfade: <span className="text-accent-orange">{loopCrossfadeSec.toFixed(3)} s</span>
+      <div className={labelClassName}>
+        <span className="flex flex-wrap items-center gap-1">
+          <span>Crossfade:</span>
+          <EditableSecondsValue
+            value={loopCrossfadeSec}
+            min={0.001}
+            max={crossfadeMaxSec}
+            onCommit={onLoopCrossfadeChange}
+          />
         </span>
+      </div>
+      <label className={labelClassName}>
         <input
           type="range"
           min={0.001}
@@ -219,8 +299,19 @@ function CutSettings({
   return (
     <div className={sectionClassName}>
       <h2 className={headingClassName}>Cut Settings</h2>
+      <div className={labelClassName}>
+        <span className="flex flex-wrap items-center gap-1">
+          <span>Seam crossfade seconds (</span>
+          <EditableSecondsValue
+            value={cutCrossfadeSec}
+            min={0}
+            max={crossfadeMaxSec}
+            onCommit={onCutCrossfadeChange}
+          />
+          <span>)</span>
+        </span>
+      </div>
       <label className={labelClassName}>
-        Seam crossfade seconds ({cutCrossfadeSec.toFixed(3)}s)
         <input
           type="range"
           min={0}
