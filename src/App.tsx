@@ -620,14 +620,14 @@ function App() {
 
       const desiredCrossfade = Math.floor(loopCrossfadeSec * buffer.sampleRate)
       const crossfadeSamples = clamp(desiredCrossfade, 1, Math.floor(selectedLen / 2))
-      const outLength = selectedLen - crossfadeSamples
+      const outLength = selectedLen
       const out = createEmptyLike(buffer, outLength, ctx)
 
       for (let ch = 0; ch < buffer.numberOfChannels; ch += 1) {
         const input = buffer.getChannelData(ch)
         const segment = input.subarray(startSample, endSample)
         const channel = out.getChannelData(ch)
-        channel.set(segment.subarray(0, outLength))
+        channel.set(segment)
 
         for (let i = 0; i < crossfadeSamples; i += 1) {
           const t = i / Math.max(1, crossfadeSamples - 1)
