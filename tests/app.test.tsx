@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/preact'
+import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../src/App'
@@ -520,6 +520,20 @@ describe('Sloploop', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Processed waveform from current selection.')).toBeInTheDocument()
+    })
+  })
+
+  it('sets the crossfade slider max to 80% of the selection and clamps the value to 200ms', async () => {
+    render(<App />)
+    await loadMp3File()
+    await waitForWaveformReady()
+
+    simulateRegionCreated(0.25, 2.5)
+
+    const slider = screen.getByRole('slider') as HTMLInputElement
+    await waitFor(() => {
+      expect(Number(slider.max)).toBeCloseTo(1.8, 5)
+      expect(slider.value).toBe('0.2')
     })
   })
 

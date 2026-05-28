@@ -55,12 +55,26 @@ const actionButtonClassName =
   'rounded-none border border-panel-border bg-control-bg px-2.5 py-2 text-white transition hover:border-app-muted disabled:cursor-not-allowed disabled:opacity-50'
 const primaryButtonClassName =
   'rounded-none border border-accent-orange bg-control-bg px-2.5 py-2 text-accent-orange transition hover:bg-accent-orange/10 disabled:cursor-not-allowed disabled:opacity-50'
+const modeButtonTitles: Record<Mode, string> = {
+  loop: 'Loop mode: adjust crossfades and export loop metadata for seamless playback.',
+  clip: 'Clip mode: apply fade-in and fade-out settings to the selected region.',
+  cut: 'Cut mode: trim the selection and manage the seam crossfade for the edit.',
+}
 
-function Checkbox({ checked, onChange }: { checked: boolean; onChange: (event: CheckboxEvent) => void }) {
+function Checkbox({
+  checked,
+  title,
+  onChange,
+}: {
+  checked: boolean
+  title: string
+  onChange: (event: CheckboxEvent) => void
+}) {
   return (
     <input
       type="checkbox"
       checked={checked}
+      title={title}
       onChange={onChange}
       className="mt-0 size-[18px] rounded-none border border-panel-border bg-control-bg text-accent-orange accent-accent-orange"
     />
@@ -92,7 +106,9 @@ function LoopSettings({
     <div className={sectionClassName}>
       <h2 className={headingClassName}>Loop Settings</h2>
       <label className={labelClassName}>
-        Crossfade seconds ({loopCrossfadeSec.toFixed(3)}s)
+        <span>
+          Crossfade: <span className="text-accent-orange">{loopCrossfadeSec.toFixed(3)} s</span>
+        </span>
         <input
           type="range"
           min={0.001}
@@ -107,6 +123,7 @@ function LoopSettings({
         Curve
         <select
           value={loopCurve}
+          title="Smoothstep eases the crossfade through the transition, while equal power keeps perceived loudness more even."
           onChange={(event: SelectEvent) => onLoopCurveChange(event.target.value as LoopCurve)}
           className={inputClassName}
         >
@@ -117,6 +134,7 @@ function LoopSettings({
       <label className={checkLabelClassName}>
         <Checkbox
           checked={snapToZeroCrossing}
+          title="Move region boundaries to the nearest zero crossing to reduce clicks and pops."
           onChange={(event: CheckboxEvent) => onSnapToZeroCrossingChange(event.target.checked)}
         />
         Snap region bounds to nearest zero crossing
@@ -124,6 +142,7 @@ function LoopSettings({
       <label className={checkLabelClassName}>
         <Checkbox
           checked={embedLoopSidecar}
+          title="Write a matching JSON sidecar file so loop metadata can be reused in other tools."
           onChange={(event: CheckboxEvent) => onEmbedLoopSidecarChange(event.target.checked)}
         />
         Export loop sidecar JSON metadata
@@ -215,6 +234,7 @@ function CutSettings({
       <label className={checkLabelClassName}>
         <Checkbox
           checked={snapToZeroCrossing}
+          title="Move region boundaries to the nearest zero crossing to reduce clicks and pops."
           onChange={(event: CheckboxEvent) => onSnapToZeroCrossingChange(event.target.checked)}
         />
         Snap region bounds to nearest zero crossing
@@ -299,6 +319,7 @@ function ControlsPanel({
             key={item}
             type="button"
             className={item === mode ? activeTabClassName : inactiveTabClassName}
+            title={modeButtonTitles[item]}
             onClick={() => onModeChange(item)}
           >
             {item.toUpperCase()}
@@ -346,10 +367,7 @@ function ControlsPanel({
         />
       ) : null}
 
-      <OutputSettings
-        canProcess={canProcess}
-        onExportWav={onExportWav}
-      />
+      <OutputSettings canProcess={canProcess} onExportWav={onExportWav} />
     </section>
   )
 }

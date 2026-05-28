@@ -149,6 +149,7 @@ function EditorPanel({
               <input
                 type="checkbox"
                 checked={normalizeOutput ?? false}
+                title="Normalize the rendered output so quiet selections are brought up to full scale before export."
                 onChange={(e) => onNormalizeOutputChange(e.target.checked)}
                 className="size-[18px] rounded-none border border-panel-border bg-control-bg accent-accent-orange"
               />

@@ -15,12 +15,14 @@ declare global {
 
 const MAX_FILE_DURATION_SEC = 600
 const WAVEFORM_BASE_COLOR = '#4A9ABA'
+const PLAYHEAD_COLOR = '#FF0000'
 const CROSSFADE_COLOR = 'var(--color-accent-orange)'
 const SELECTION_FILL_COLOR = 'rgba(50, 50, 50, 0.45)'
 const SELECTION_CROSSFADE_FILL =
   'color-mix(in srgb, var(--color-accent-orange) 72%, transparent)'
 const DEFAULT_CROSSFADE_MAX_SEC = 5
-const SELECTION_CROSSFADE_MAX_SEC = 0.2
+const SELECTION_CROSSFADE_MAX_RATIO = 0.8
+const SELECTION_CROSSFADE_CURRENT_MAX_SEC = 0.2
 const MIN_ZOOM = 20
 const MAX_ZOOM = 400
 
@@ -248,11 +250,11 @@ function App() {
 
   const applySelectionCrossfadePreset = useCallback((start: number, end: number) => {
     const selectionSeconds = Math.max(0, end - start)
-    const nextMax = SELECTION_CROSSFADE_MAX_SEC
-    const nextValue = clamp(selectionSeconds * 0.1, 0, nextMax)
+    const nextMax = Math.max(0.001, selectionSeconds * SELECTION_CROSSFADE_MAX_RATIO)
+    const nextValue = clamp(selectionSeconds * 0.1, 0, SELECTION_CROSSFADE_CURRENT_MAX_SEC)
     setCrossfadeMaxSec(nextMax)
     setLoopCrossfadeSec(clamp(nextValue, 0.001, nextMax))
-    setCutCrossfadeSec(nextValue)
+    setCutCrossfadeSec(clamp(nextValue, 0, nextMax))
   }, [])
 
   const styleRegion = useCallback(
@@ -1056,6 +1058,7 @@ function App() {
         container: waveformRef.current,
         waveColor: WAVEFORM_BASE_COLOR,
         progressColor: WAVEFORM_BASE_COLOR,
+        cursorColor: PLAYHEAD_COLOR,
         cursorWidth: 0,
         height: 110,
         barWidth: 2,
@@ -1242,6 +1245,7 @@ function App() {
         container: processedWaveformRef.current,
         waveColor: WAVEFORM_BASE_COLOR,
         progressColor: WAVEFORM_BASE_COLOR,
+        cursorColor: PLAYHEAD_COLOR,
         cursorWidth: 2,
         height: 110,
         barWidth: 2,
