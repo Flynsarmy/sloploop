@@ -1,10 +1,19 @@
 import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
+import preact from '@preact/preset-vite'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [preact(), tailwindcss()],
+  resolve: {
+    alias: {
+      'react': 'preact/compat',
+      'react-dom/test-utils': 'preact/test-utils',
+      'react-dom': 'preact/compat',
+      'react/jsx-runtime': 'preact/jsx-runtime',
+      'react/jsx-dev-runtime': 'preact/jsx-dev-runtime',
+    },
+  },
   test: {
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],

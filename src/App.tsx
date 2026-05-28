@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent, WheelEvent as ReactWheelEvent } from 'react'
-import WaveSurfer from 'wavesurfer.js'
-import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js'
+import type WaveSurfer from 'wavesurfer.js'
+import type RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js'
 import AppHeader from './components/AppHeader'
 import ControlsPanel from './components/ControlsPanel'
 import EditorPanel from './components/EditorPanel'
@@ -218,6 +218,8 @@ function App() {
   const applyWaveColorsRef = useRef<(selectionActive: boolean) => void>(() => {})
   const clearSelectionRef = useRef<(newDuration?: number) => void>(() => {})
   const applySelectionCrossfadePresetRef = useRef<(start: number, end: number) => void>(() => {})
+  const loadBufferIntoWaveformRef = useRef<(buffer: AudioBuffer) => Promise<void>>(() => Promise.resolve())
+  const processedBufferRef = useRef<AudioBuffer | null>(null)
   const loopPreviewEnabledRef = useRef(loopPreviewEnabled)
   const processedLoopPreviewEnabledRef = useRef(processedLoopPreviewEnabled)
   const processedPreviewSourceRef = useRef<AudioBufferSourceNode | null>(null)
@@ -806,6 +808,14 @@ function App() {
     [hasActiveSelection, regionEnd, regionStart],
   )
 
+  useEffect(() => {
+    loadBufferIntoWaveformRef.current = loadBufferIntoWaveform
+  }, [loadBufferIntoWaveform])
+
+  useEffect(() => {
+    processedBufferRef.current = processedBuffer
+  }, [processedBuffer])
+
   const decodeFile = useCallback(
     async (file: File) => {
       setError('')
@@ -1028,149 +1038,180 @@ function App() {
       return
     }
 
-    const regions = RegionsPlugin.create()
-    const ws = WaveSurfer.create({
-      container: waveformRef.current,
-      waveColor: WAVEFORM_BASE_COLOR,
-      progressColor: WAVEFORM_BASE_COLOR,
-      cursorWidth: 0,
-      height: 110,
-      barWidth: 2,
-      barGap: 1,
-      normalize: false,
-      interact: true,
-      autoScroll: true,
-      plugins: [regions],
-    })
+    let disposed = false
+    let cleanup: (() => void) | null = null
 
-    wavesurferRef.current = ws
-    window.wavesurfer = ws
-    regionsRef.current = regions
-    setIsWaveformReady(false)
+    const initWaveform = async () => {
+      const [{ default: WaveSurferLib }, { default: RegionsPluginLib }] = await Promise.all([
+        import('wavesurfer.js'),
+        import('wavesurfer.js/dist/plugins/regions.esm.js'),
+      ])
 
-    const wrapper =
-      typeof (ws as WaveSurfer & { getWrapper?: () => HTMLElement }).getWrapper === 'function'
-        ? (ws as WaveSurfer & { getWrapper: () => HTMLElement }).getWrapper()
-        : waveformRef.current
-    if (!wrapper) {
-      return
-    }
-    const scrollContainer = wrapper.parentElement instanceof HTMLElement ? wrapper.parentElement : wrapper
+      if (disposed || !waveformRef.current) {
+        return
+      }
 
-    regions.enableDragSelection({
-      color: 'rgba(74, 154, 186, 0.35)',
-    })
+      const regions = RegionsPluginLib.create()
+      const ws = WaveSurferLib.create({
+        container: waveformRef.current,
+        waveColor: WAVEFORM_BASE_COLOR,
+        progressColor: WAVEFORM_BASE_COLOR,
+        cursorWidth: 0,
+        height: 110,
+        barWidth: 2,
+        barGap: 1,
+        normalize: false,
+        interact: true,
+        autoScroll: true,
+        plugins: [regions],
+      })
 
-    const syncRegion = (start: number, end: number) => {
-      setRegionStart(start)
-      setRegionEnd(end)
-    }
+      wavesurferRef.current = ws
+      window.wavesurfer = ws
+      regionsRef.current = regions
+      setIsWaveformReady(false)
 
-    regions.on('region-created', (current) => {
-      regions.getRegions().forEach((region) => {
-        if (region.id !== current.id) {
-          region.remove()
+      const wrapper =
+        typeof (ws as WaveSurfer & { getWrapper?: () => HTMLElement }).getWrapper === 'function'
+          ? (ws as WaveSurfer & { getWrapper: () => HTMLElement }).getWrapper()
+          : waveformRef.current
+
+      if (!wrapper) {
+        ws.destroy()
+        wavesurferRef.current = null
+        window.wavesurfer = null
+        regionsRef.current = null
+        return
+      }
+
+      const scrollContainer =
+        wrapper.parentElement instanceof HTMLElement ? wrapper.parentElement : wrapper
+
+      regions.enableDragSelection({
+        color: 'rgba(74, 154, 186, 0.35)',
+      })
+
+      const syncRegion = (start: number, end: number) => {
+        setRegionStart(start)
+        setRegionEnd(end)
+      }
+
+      regions.on('region-created', (current) => {
+        regions.getRegions().forEach((region) => {
+          if (region.id !== current.id) {
+            region.remove()
+          }
+        })
+        if (!isRestoringRegionRef.current) {
+          applySelectionCrossfadePresetRef.current(current.start, current.end)
         }
+        styleRegionRef.current(current.start, current.end, (current as { element?: HTMLElement }).element)
+        applyWaveColorsRef.current(true)
+        syncRegion(current.start, current.end)
+        setHasActiveSelection(true)
+        ;(ws as WaveSurfer & { setOptions?: (options: { cursorWidth: number }) => void }).setOptions?.({
+          cursorWidth: 2,
+        })
+        ;(ws as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(current.start)
+        setTransportState('stop')
       })
-      if (!isRestoringRegionRef.current) {
-        applySelectionCrossfadePresetRef.current(current.start, current.end)
+
+      regions.on('region-updated', (region) => {
+        if (!isRestoringRegionRef.current) {
+          applySelectionCrossfadePresetRef.current(region.start, region.end)
+        }
+        styleRegionRef.current(region.start, region.end, (region as { element?: HTMLElement }).element)
+        applyWaveColorsRef.current(true)
+        syncRegion(region.start, region.end)
+        setHasActiveSelection(true)
+        ;(ws as WaveSurfer & { setOptions?: (options: { cursorWidth: number }) => void }).setOptions?.({
+          cursorWidth: 2,
+        })
+        ;(ws as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(region.start)
+        setTransportState('stop')
+      })
+
+      regions.on('region-removed', () => {
+        const active = regions.getRegions().length > 0
+        applyWaveColorsRef.current(active)
+        setHasActiveSelection(active)
+      })
+
+      let isMiddlePanning = false
+      let panStartX = 0
+      let panStartScrollLeft = 0
+
+      const onPointerDown = (event: PointerEvent) => {
+        if (event.button === 1) {
+          isMiddlePanning = true
+          panStartX = event.clientX
+          panStartScrollLeft = scrollContainer.scrollLeft
+          scrollContainer.style.cursor = 'grabbing'
+          event.preventDefault()
+        }
       }
-      styleRegionRef.current(current.start, current.end, (current as { element?: HTMLElement }).element)
-      applyWaveColorsRef.current(true)
-      syncRegion(current.start, current.end)
-      setHasActiveSelection(true)
-      ;(ws as WaveSurfer & { setOptions?: (options: { cursorWidth: number }) => void }).setOptions?.({
-        cursorWidth: 2,
-      })
-      ;(ws as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(current.start)
-      setTransportState('stop')
-    })
 
-    regions.on('region-updated', (region) => {
-      if (!isRestoringRegionRef.current) {
-        applySelectionCrossfadePresetRef.current(region.start, region.end)
-      }
-      styleRegionRef.current(region.start, region.end, (region as { element?: HTMLElement }).element)
-      applyWaveColorsRef.current(true)
-      syncRegion(region.start, region.end)
-      setHasActiveSelection(true)
-      ;(ws as WaveSurfer & { setOptions?: (options: { cursorWidth: number }) => void }).setOptions?.({
-        cursorWidth: 2,
-      })
-      ;(ws as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(region.start)
-      setTransportState('stop')
-    })
-
-    regions.on('region-removed', () => {
-      const active = regions.getRegions().length > 0
-      applyWaveColorsRef.current(active)
-      setHasActiveSelection(active)
-    })
-
-    let isMiddlePanning = false
-    let panStartX = 0
-    let panStartScrollLeft = 0
-
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.button === 1) {
-        isMiddlePanning = true
-        panStartX = event.clientX
-        panStartScrollLeft = scrollContainer.scrollLeft
-        scrollContainer.style.cursor = 'grabbing'
+      const onPointerMove = (event: PointerEvent) => {
+        if (!isMiddlePanning) {
+          return
+        }
+        scrollContainer.scrollLeft = panStartScrollLeft - (event.clientX - panStartX)
         event.preventDefault()
       }
-    }
 
-    const onPointerMove = (event: PointerEvent) => {
-      if (!isMiddlePanning) {
-        return
-      }
-      scrollContainer.scrollLeft = panStartScrollLeft - (event.clientX - panStartX)
-      event.preventDefault()
-    }
-
-    const stopMiddlePan = () => {
-      isMiddlePanning = false
-      scrollContainer.style.cursor = ''
-    }
-
-    const onWheel = (event: WheelEvent) => {
-      const wsInstance = wavesurferRef.current
-      if (!wsInstance || wsInstance.getDuration() <= 0 || !wsInstance.getDecodedData()) {
-        return
+      const stopMiddlePan = () => {
+        isMiddlePanning = false
+        scrollContainer.style.cursor = ''
       }
 
-      event.preventDefault()
-      const delta = event.deltaY < 0 ? 10 : -10
-      setZoom((prev) => clamp(prev + delta, MIN_ZOOM, MAX_ZOOM))
+      const onWheel = (event: WheelEvent) => {
+        const wsInstance = wavesurferRef.current
+        if (!wsInstance || wsInstance.getDuration() <= 0 || !wsInstance.getDecodedData()) {
+          return
+        }
+
+        event.preventDefault()
+        const delta = event.deltaY < 0 ? 10 : -10
+        setZoom((prev) => clamp(prev + delta, MIN_ZOOM, MAX_ZOOM))
+      }
+
+      scrollContainer.addEventListener('pointerdown', onPointerDown)
+      scrollContainer.addEventListener('pointermove', onPointerMove)
+      scrollContainer.addEventListener('pointerup', stopMiddlePan)
+      scrollContainer.addEventListener('pointercancel', stopMiddlePan)
+      scrollContainer.addEventListener('wheel', onWheel, { passive: false })
+
+      ws.on('interaction', () => {
+        stopPreview()
+      })
+
+      ws.on('finish', () => {
+        setTransportState('stop')
+      })
+
+      cleanup = () => {
+        stopPreview()
+        stopProcessedPreview()
+        scrollContainer.removeEventListener('pointerdown', onPointerDown)
+        scrollContainer.removeEventListener('pointermove', onPointerMove)
+        scrollContainer.removeEventListener('pointerup', stopMiddlePan)
+        scrollContainer.removeEventListener('pointercancel', stopMiddlePan)
+        scrollContainer.removeEventListener('wheel', onWheel)
+        ws.destroy()
+        wavesurferRef.current = null
+        window.wavesurfer = null
+        regionsRef.current = null
+      }
     }
 
-    scrollContainer.addEventListener('pointerdown', onPointerDown)
-    scrollContainer.addEventListener('pointermove', onPointerMove)
-    scrollContainer.addEventListener('pointerup', stopMiddlePan)
-    scrollContainer.addEventListener('pointercancel', stopMiddlePan)
-    scrollContainer.addEventListener('wheel', onWheel, { passive: false })
-
-    ws.on('interaction', () => {
-      stopPreview()
-    })
-
-    ws.on('finish', () => {
-      setTransportState('stop')
+    void initWaveform().catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Failed to initialize waveform renderer.'
+      setError(msg)
     })
 
     return () => {
-      stopPreview()
-      stopProcessedPreview()
-      scrollContainer.removeEventListener('pointerdown', onPointerDown)
-      scrollContainer.removeEventListener('pointermove', onPointerMove)
-      scrollContainer.removeEventListener('pointerup', stopMiddlePan)
-      scrollContainer.removeEventListener('pointercancel', stopMiddlePan)
-      scrollContainer.removeEventListener('wheel', onWheel)
-      ws.destroy()
-      wavesurferRef.current = null
-      window.wavesurfer = null
-      regionsRef.current = null
+      disposed = true
+      cleanup?.()
     }
   }, [stopPreview, stopProcessedPreview])
 
@@ -1187,27 +1228,57 @@ function App() {
       return
     }
 
-    const ws = WaveSurfer.create({
-      container: processedWaveformRef.current,
-      waveColor: WAVEFORM_BASE_COLOR,
-      progressColor: WAVEFORM_BASE_COLOR,
-      cursorWidth: 2,
-      height: 110,
-      barWidth: 2,
-      barGap: 1,
-      normalize: false,
-      interact: true,
-      autoScroll: true,
-    })
+    let disposed = false
+    let ws: WaveSurfer | null = null
 
-    processedWavesurferRef.current = ws
+    const initProcessedWaveform = async () => {
+      const { default: WaveSurferLib } = await import('wavesurfer.js')
 
-    ws.on('interaction', () => {
-      setProcessedTransportState('pause')
+      if (disposed || !processedWaveformRef.current || processedWavesurferRef.current) {
+        return
+      }
+
+      ws = WaveSurferLib.create({
+        container: processedWaveformRef.current,
+        waveColor: WAVEFORM_BASE_COLOR,
+        progressColor: WAVEFORM_BASE_COLOR,
+        cursorWidth: 2,
+        height: 110,
+        barWidth: 2,
+        barGap: 1,
+        normalize: false,
+        interact: true,
+        autoScroll: true,
+      })
+
+      processedWavesurferRef.current = ws
+
+      ws.on('interaction', () => {
+        setProcessedTransportState('pause')
+      })
+
+      // The buffer-loading effect already ran before this async init completed;
+      // trigger the load now that ws is available.
+      const currentBuffer = processedBufferRef.current
+      if (currentBuffer && !disposed) {
+        const channelData: Float32Array[] = []
+        for (let ch = 0; ch < currentBuffer.numberOfChannels; ch += 1) {
+          channelData.push(currentBuffer.getChannelData(ch))
+        }
+        void ws.load('', channelData, currentBuffer.duration)
+          .then(() => { if (!disposed) setProcessedTransportState('stop') })
+          .catch(() => { if (!disposed) setProcessedBuffer(null) })
+      }
+    }
+
+    void initProcessedWaveform().catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Failed to initialize processed waveform.'
+      setError(msg)
     })
 
     return () => {
-      if (processedWavesurferRef.current === ws) {
+      disposed = true
+      if (ws && processedWavesurferRef.current === ws) {
         stopProcessedPreview()
         ws.destroy()
         processedWavesurferRef.current = null
@@ -1281,11 +1352,11 @@ function App() {
     if (!buf) {
       return
     }
-    void loadBufferIntoWaveform(buf).catch((err: unknown) => {
+    void loadBufferIntoWaveformRef.current(buf).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : 'Failed to render waveform.'
       setError(msg)
     })
-  }, [audioBuffer, normalizedDisplayBuffer, normalizeOutput, loadBufferIntoWaveform])
+  }, [audioBuffer, normalizedDisplayBuffer, normalizeOutput])
 
   useEffect(() => {
     if (!audioBuffer || !isWaveformReady) {

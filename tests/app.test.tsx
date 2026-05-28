@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../src/App'
@@ -126,7 +126,7 @@ describe('Sloploop', () => {
     render(<App />)
 
     expect(screen.getByText('Open File')).toBeInTheDocument()
-    expect(screen.getByText('Drag and drop WAV, OGG, MP3, AIFF')).toBeInTheDocument()
+    expect(screen.getByText('Supported: WAV, OGG, MP3, AIFF, AIF')).toBeInTheDocument()
   })
 
   it('loads the MP3 fixture from assets through the file input', async () => {
@@ -143,7 +143,9 @@ describe('Sloploop', () => {
       expect(screen.getByText(/Loaded car-idle-106494\.mp3/)).toBeInTheDocument()
     })
 
-    expect(fakeWaveSurfer.load).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(fakeWaveSurfer.load).toHaveBeenCalledTimes(1)
+    })
     expect(fakeWaveSurfer.zoom).toHaveBeenCalled()
     expect(screen.queryByText('No audio loaded')).not.toBeInTheDocument()
   })
