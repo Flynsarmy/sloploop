@@ -12,7 +12,6 @@ type ControlsPanelProps = {
   clipFadeInMs: number
   clipFadeOutMs: number
   cutCrossfadeSec: number
-  normalizeOutput: boolean
   canProcess: boolean
   hasCutUndo: boolean
   onModeChange: (mode: Mode) => void
@@ -23,7 +22,6 @@ type ControlsPanelProps = {
   onClipFadeInChange: (value: number) => void
   onClipFadeOutChange: (value: number) => void
   onCutCrossfadeChange: (value: number) => void
-  onNormalizeOutputChange: (checked: boolean) => void
   onWheelNudge: (
     event: WheelEvent<HTMLInputElement>,
     value: number,
@@ -34,7 +32,6 @@ type ControlsPanelProps = {
   ) => void
   onApplyCut: () => void
   onUndoCut: () => void
-  onPreviewProcessed: () => void
   onExportWav: () => void
 }
 
@@ -245,37 +242,16 @@ function CutSettings({
 }
 
 function OutputSettings({
-  normalizeOutput,
   canProcess,
-  onNormalizeOutputChange,
-  onPreviewProcessed,
   onExportWav,
 }: {
-  normalizeOutput: boolean
   canProcess: boolean
-  onNormalizeOutputChange: (checked: boolean) => void
-  onPreviewProcessed: () => void
   onExportWav: () => void
 }) {
   return (
     <div className={sectionClassName}>
       <h2 className={headingClassName}>Output</h2>
-      <label className={checkLabelClassName}>
-        <Checkbox
-          checked={normalizeOutput}
-          onChange={(event: CheckboxEvent) => onNormalizeOutputChange(event.target.checked)}
-        />
-        Normalize exported WAV
-      </label>
       <div className="grid gap-2">
-        <button
-          type="button"
-          onClick={onPreviewProcessed}
-          disabled={!canProcess}
-          className={actionButtonClassName}
-        >
-          Preview Processed
-        </button>
         <button
           type="button"
           className={primaryButtonClassName}
@@ -300,7 +276,6 @@ function ControlsPanel({
   clipFadeInMs,
   clipFadeOutMs,
   cutCrossfadeSec,
-  normalizeOutput,
   canProcess,
   hasCutUndo,
   onModeChange,
@@ -311,11 +286,9 @@ function ControlsPanel({
   onClipFadeInChange,
   onClipFadeOutChange,
   onCutCrossfadeChange,
-  onNormalizeOutputChange,
   onWheelNudge,
   onApplyCut,
   onUndoCut,
-  onPreviewProcessed,
   onExportWav,
 }: ControlsPanelProps) {
   return (
@@ -374,10 +347,7 @@ function ControlsPanel({
       ) : null}
 
       <OutputSettings
-        normalizeOutput={normalizeOutput}
         canProcess={canProcess}
-        onNormalizeOutputChange={onNormalizeOutputChange}
-        onPreviewProcessed={onPreviewProcessed}
         onExportWav={onExportWav}
       />
     </section>

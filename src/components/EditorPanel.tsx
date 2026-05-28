@@ -5,6 +5,7 @@ type TransportState = 'play' | 'pause' | 'stop'
 
 type EditorPanelProps = {
   sourceName: string
+  subtitleText?: string
   regionStart: number
   regionEnd: number
   audioLoaded: boolean
@@ -20,6 +21,8 @@ type EditorPanelProps = {
   footerSecondaryText?: string
   onDrop?: (event: DragEvent<HTMLDivElement>) => void | Promise<void>
   onFileInput?: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>
+  normalizeOutput?: boolean
+  onNormalizeOutputChange?: (checked: boolean) => void
   onPlaySelection: () => void
   onPauseSelection: () => void
   onStopPreview: () => void
@@ -28,6 +31,7 @@ type EditorPanelProps = {
 
 function EditorPanel({
   sourceName,
+  subtitleText,
   regionStart,
   regionEnd,
   audioLoaded,
@@ -40,7 +44,9 @@ function EditorPanel({
   allowFileDrop = true,
   showImportCapMessage = true,
   footerPrimaryText = 'Drag region handles to define selection.',
-  footerSecondaryText = 'Use panel controls to preview and export audio.',
+  footerSecondaryText,
+  normalizeOutput,
+  onNormalizeOutputChange,
   onDrop,
   onFileInput,
   onPlaySelection,
@@ -59,7 +65,7 @@ function EditorPanel({
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="m-0 text-[22px] font-semibold">{sourceName || 'No source loaded'}</h2>
-          <p className="mt-1 mb-0 text-[13px] text-app-muted">Selection and output controls</p>
+          {subtitleText ? <p className="mt-1 mb-0 text-[13px] text-app-muted">{subtitleText}</p> : null}
         </div>
         <div className="grid gap-1 text-[13px] text-app-muted md:text-right">
           <span>Start: {regionStart.toFixed(3)}s</span>
@@ -68,19 +74,20 @@ function EditorPanel({
       </div>
 
       <div
-        className="relative flex min-h-[260px] overflow-hidden rounded-xl border border-panel-border bg-panel-bg"
+        className="relative flex overflow-hidden rounded-xl border border-panel-border bg-panel-bg"
         onDragOver={allowFileDrop ? (event) => event.preventDefault() : undefined}
         onDrop={allowFileDrop && onDrop ? onDrop : undefined}
       >
         <div
           ref={waveformRef}
-          className={audioLoaded ? 'waveform min-h-[260px] w-full' : 'waveform hidden min-h-[260px] w-full'}
+          className={audioLoaded ? 'waveform h-[110px] w-full' : 'waveform hidden h-[110px] w-full'}
           style={{ '--waveform-base-color': waveColor } as CSSProperties}
         />
         {!audioLoaded && allowFileDrop ? (
-          <div className="m-3 grid min-h-[calc(260px-24px)] w-full flex-1 content-center justify-items-center gap-1 border border-dashed border-panel-border px-4 py-4 text-center text-app-muted">
-            <p className="m-0">Drag and drop WAV, OGG, MP3, AIFF</p>
+          <div className="m-3 grid min-h-[calc(110px-24px)] w-full flex-1 content-center justify-items-center gap-1 border border-dashed border-panel-border px-4 py-4 text-center text-app-muted">
+            <p className="m-0">Drop a file to get started.</p>
             <p className="m-0">Supported: WAV, OGG, MP3, AIFF, AIF</p>
+            {showImportCapMessage ? <p className="m-0">10-minute import cap to keep browser memory stable.</p> : null}
             <label className="mt-2.5 inline-flex min-w-40 items-center justify-center rounded-none border border-panel-border bg-control-bg px-3.5 py-[11px] font-bold text-white transition hover:border-app-muted">
               <input
                 type="file"
@@ -137,13 +144,23 @@ function EditorPanel({
           >
             <Repeat size={17} />
           </button>
+          {onNormalizeOutputChange !== undefined ? (
+            <label className="ml-1 inline-flex cursor-pointer select-none items-center gap-2 text-[13px] text-app-muted">
+              <input
+                type="checkbox"
+                checked={normalizeOutput ?? false}
+                onChange={(e) => onNormalizeOutputChange(e.target.checked)}
+                className="size-[18px] rounded-none border border-panel-border bg-control-bg accent-accent-orange"
+              />
+              Normalize
+            </label>
+          ) : null}
         </div>
       ) : null}
 
       <div className="flex flex-wrap gap-3 text-xs text-app-muted">
         <span>{footerPrimaryText}</span>
-        <span>{footerSecondaryText}</span>
-        {showImportCapMessage ? <span>10-minute import cap to keep browser memory stable.</span> : null}
+        {footerSecondaryText ? <span>{footerSecondaryText}</span> : null}
       </div>
     </section>
   )

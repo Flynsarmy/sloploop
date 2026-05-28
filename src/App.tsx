@@ -186,11 +186,12 @@ function App() {
 
   const [cutCrossfadeSec, setCutCrossfadeSec] = useState(0.02)
   const [normalizeOutput, setNormalizeOutput] = useState(true)
+  const [normalizedDisplayBuffer, setNormalizedDisplayBuffer] = useState<AudioBuffer | null>(null)
 
   const [transportState, setTransportState] = useState<TransportState>('stop')
-  const [loopPreviewEnabled, setLoopPreviewEnabled] = useState(false)
+  const [loopPreviewEnabled, setLoopPreviewEnabled] = useState(true)
   const [processedTransportState, setProcessedTransportState] = useState<TransportState>('stop')
-  const [processedLoopPreviewEnabled, setProcessedLoopPreviewEnabled] = useState(false)
+  const [processedLoopPreviewEnabled, setProcessedLoopPreviewEnabled] = useState(true)
   const [undoCount, setUndoCount] = useState(0)
   const [isWaveformReady, setIsWaveformReady] = useState(false)
   const [hasActiveSelection, setHasActiveSelection] = useState(false)
@@ -223,6 +224,7 @@ function App() {
   const processedPreviewOffsetSecRef = useRef(0)
   const processedPreviewStartedAtSecRef = useRef(0)
   const processedPlayheadRafRef = useRef<number | null>(null)
+  const isRestoringRegionRef = useRef(false)
 
   useEffect(() => {
     loopPreviewEnabledRef.current = loopPreviewEnabled
@@ -632,9 +634,10 @@ function App() {
           const outGain =
             loopCurve === 'equal-power' ? Math.cos(t * Math.PI * 0.5) : 1 - smoothstep(t)
 
-          const startValue = segment[i]
-          const endValue = segment[segment.length - crossfadeSamples + i]
-          channel[i] = startValue * outGain + endValue * inGain
+          // Build the loop seam at the buffer start by transitioning tail -> head.
+          const tailValue = segment[segment.length - crossfadeSamples + i]
+          const headValue = segment[i]
+          channel[i] = tailValue * outGain + headValue * inGain
         }
       }
 
@@ -772,10 +775,35 @@ function App() {
       if (ws.getDuration() > 0 && ws.getDecodedData()) {
         ws.zoom(zoomRef.current)
       }
-      clearSelectionRef.current(buffer.duration)
+
+      const shouldRestoreRegion = hasActiveSelection && regionEnd > regionStart
+      if (shouldRestoreRegion) {
+        const regions = regionsRef.current
+        if (regions) {
+          const maxStart = Math.max(0, buffer.duration - 0.001)
+          const start = clamp(regionStart, 0, maxStart)
+          const end = clamp(regionEnd, start + 0.001, buffer.duration)
+
+          regions.getRegions().forEach((region) => region.remove())
+          isRestoringRegionRef.current = true
+          try {
+            regions.addRegion({
+              start,
+              end,
+              color: 'rgba(74, 154, 186, 0.35)',
+              drag: true,
+              resize: true,
+            })
+          } finally {
+            isRestoringRegionRef.current = false
+          }
+        }
+      } else {
+        clearSelectionRef.current(buffer.duration)
+      }
       setIsWaveformReady(true)
     },
-    [],
+    [hasActiveSelection, regionEnd, regionStart],
   )
 
   const decodeFile = useCallback(
@@ -856,7 +884,8 @@ function App() {
   )
 
   const previewSelection = useCallback(async () => {
-    if (!audioBuffer) {
+    const buf = (normalizeOutput && normalizedDisplayBuffer) ? normalizedDisplayBuffer : audioBuffer
+    if (!buf) {
       return
     }
 
@@ -873,19 +902,19 @@ function App() {
 
     stopPreview()
     stopProcessedPreview()
-    const { startSample, endSample } = ensureSelectionSamples(audioBuffer, false)
-    const startSeconds = startSample / audioBuffer.sampleRate
-    const endSeconds = endSample / audioBuffer.sampleRate
+    const { startSample, endSample } = ensureSelectionSamples(buf, false)
+    const startSeconds = startSample / buf.sampleRate
+    const endSeconds = endSample / buf.sampleRate
     const durationSeconds = Math.max(0.001, endSeconds - startSeconds)
     const ctx = getAudioContext()
     const out = ctx.createBuffer(
-      audioBuffer.numberOfChannels,
+      buf.numberOfChannels,
       Math.max(1, endSample - startSample),
-      audioBuffer.sampleRate,
+      buf.sampleRate,
     )
 
-    for (let ch = 0; ch < audioBuffer.numberOfChannels; ch += 1) {
-      out.copyToChannel(audioBuffer.getChannelData(ch).subarray(startSample, endSample), ch)
+    for (let ch = 0; ch < buf.numberOfChannels; ch += 1) {
+      out.copyToChannel(buf.getChannelData(ch).subarray(startSample, endSample), ch)
     }
 
     selectionPreviewBufferRef.current = out
@@ -901,6 +930,8 @@ function App() {
     setMessage('Previewing selection')
   }, [
     audioBuffer,
+    normalizedDisplayBuffer,
+    normalizeOutput,
     ensureSelectionSamples,
     getAudioContext,
     startSelectionPreview,
@@ -931,19 +962,6 @@ function App() {
     stopPlayheadTracking()
     setTransportState('pause')
   }, [stopPlayheadTracking])
-
-  const previewProcessed = useCallback(async () => {
-    if (!processedBuffer) {
-      return
-    }
-
-    try {
-      await playProcessedPreview()
-      setMessage(`Previewing ${mode.toUpperCase()} output`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Preview failed.')
-    }
-  }, [mode, playProcessedPreview, processedBuffer])
 
   const applyCut = useCallback(() => {
     if (!audioBuffer) {
@@ -1016,7 +1034,7 @@ function App() {
       waveColor: WAVEFORM_BASE_COLOR,
       progressColor: WAVEFORM_BASE_COLOR,
       cursorWidth: 0,
-      height: 220,
+      height: 110,
       barWidth: 2,
       barGap: 1,
       normalize: false,
@@ -1054,7 +1072,9 @@ function App() {
           region.remove()
         }
       })
-      applySelectionCrossfadePresetRef.current(current.start, current.end)
+      if (!isRestoringRegionRef.current) {
+        applySelectionCrossfadePresetRef.current(current.start, current.end)
+      }
       styleRegionRef.current(current.start, current.end, (current as { element?: HTMLElement }).element)
       applyWaveColorsRef.current(true)
       syncRegion(current.start, current.end)
@@ -1067,7 +1087,9 @@ function App() {
     })
 
     regions.on('region-updated', (region) => {
-      applySelectionCrossfadePresetRef.current(region.start, region.end)
+      if (!isRestoringRegionRef.current) {
+        applySelectionCrossfadePresetRef.current(region.start, region.end)
+      }
       styleRegionRef.current(region.start, region.end, (region as { element?: HTMLElement }).element)
       applyWaveColorsRef.current(true)
       syncRegion(region.start, region.end)
@@ -1170,7 +1192,7 @@ function App() {
       waveColor: WAVEFORM_BASE_COLOR,
       progressColor: WAVEFORM_BASE_COLOR,
       cursorWidth: 2,
-      height: 220,
+      height: 110,
       barWidth: 2,
       barGap: 1,
       normalize: false,
@@ -1200,13 +1222,14 @@ function App() {
       return
     }
 
+    const buf = (normalizeOutput && normalizedDisplayBuffer) ? normalizedDisplayBuffer : audioBuffer
     try {
-      const out = processByMode(audioBuffer)
+      const out = processByMode(buf)
       setProcessedBuffer(out)
     } catch {
       setProcessedBuffer(null)
     }
-  }, [audioBuffer, hasActiveSelection, processByMode, stopProcessedPreview])
+  }, [audioBuffer, normalizedDisplayBuffer, normalizeOutput, hasActiveSelection, processByMode, stopProcessedPreview])
 
   useEffect(() => {
     const ws = processedWavesurferRef.current
@@ -1254,14 +1277,15 @@ function App() {
   }, [hasActiveSelection, processedBuffer])
 
   useEffect(() => {
-    if (!audioBuffer) {
+    const buf = (normalizeOutput && normalizedDisplayBuffer) ? normalizedDisplayBuffer : audioBuffer
+    if (!buf) {
       return
     }
-    void loadBufferIntoWaveform(audioBuffer).catch((err: unknown) => {
+    void loadBufferIntoWaveform(buf).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : 'Failed to render waveform.'
       setError(msg)
     })
-  }, [audioBuffer, loadBufferIntoWaveform])
+  }, [audioBuffer, normalizedDisplayBuffer, normalizeOutput, loadBufferIntoWaveform])
 
   useEffect(() => {
     if (!audioBuffer || !isWaveformReady) {
@@ -1312,6 +1336,17 @@ function App() {
     })
   }, [])
 
+  useEffect(() => {
+    if (!audioBuffer || !normalizeOutput) {
+      setNormalizedDisplayBuffer(null)
+      return
+    }
+    const ctx = getAudioContext()
+    const copy = copyBuffer(audioBuffer, ctx)
+    normalizeBuffer(copy)
+    setNormalizedDisplayBuffer(copy)
+  }, [audioBuffer, normalizeOutput, getAudioContext])
+
   const canProcess = Boolean(audioBuffer) && !isBusy
   const hasCutUndo = undoCount > 0
 
@@ -1343,7 +1378,6 @@ function App() {
             clipFadeInMs={clipFadeInMs}
             clipFadeOutMs={clipFadeOutMs}
             cutCrossfadeSec={cutCrossfadeSec}
-            normalizeOutput={normalizeOutput}
             canProcess={canProcess}
             hasCutUndo={hasCutUndo}
             onModeChange={setMode}
@@ -1354,11 +1388,9 @@ function App() {
             onClipFadeInChange={setClipFadeInMs}
             onClipFadeOutChange={setClipFadeOutMs}
             onCutCrossfadeChange={setCutCrossfadeSec}
-            onNormalizeOutputChange={setNormalizeOutput}
             onWheelNudge={onWheelNudge}
             onApplyCut={applyCut}
             onUndoCut={undoCut}
-            onPreviewProcessed={() => void previewProcessed()}
             onExportWav={exportWav}
           />
         ) : null}
@@ -1375,6 +1407,8 @@ function App() {
             waveColor={WAVEFORM_BASE_COLOR}
             transportState={transportState}
             loopPreviewEnabled={loopPreviewEnabled}
+            normalizeOutput={normalizeOutput}
+            onNormalizeOutputChange={setNormalizeOutput}
             onDrop={onDrop}
             onFileInput={onFileInput}
             onPlaySelection={() => void previewSelection()}
@@ -1382,7 +1416,6 @@ function App() {
             onStopPreview={stopPreview}
             onToggleLoopPreview={toggleLoopPreview}
             footerPrimaryText="Drag region handles to define selection."
-            footerSecondaryText="Use panel controls to preview and export audio."
           />
 
           {hasActiveSelection && processedBuffer ? (
@@ -1403,8 +1436,8 @@ function App() {
               onPauseSelection={pauseProcessedPreview}
               onStopPreview={stopProcessedPreview}
               onToggleLoopPreview={toggleProcessedLoopPreview}
-              footerPrimaryText="Processed waveform from current selection."
-              footerSecondaryText="Use panel controls to audition the processed result."
+              subtitleText="Processed waveform from current selection."
+              footerPrimaryText=""
             />
           ) : null}
         </div>
