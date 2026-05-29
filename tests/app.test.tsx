@@ -138,7 +138,7 @@ async function loadMp3File() {
 /** Wait for the waveform transport controls to appear (isWaveformReady = true). */
 async function waitForWaveformReady() {
   await waitFor(() => {
-    expect(screen.getByRole('button', { name: 'Play selection' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Play selection' }).length).toBeGreaterThan(0)
   })
 }
 
@@ -310,9 +310,19 @@ describe('Sloploop', () => {
     await loadMp3File()
     await waitForWaveformReady()
 
-    expect(screen.getByRole('button', { name: 'Pause preview' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Stop preview' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Disable loop preview' })).toBeInTheDocument()
+    const pauseButton = screen
+      .getAllByRole('button', { name: 'Pause preview' })
+      .find((button) => !(button as HTMLButtonElement).disabled)
+    const stopButton = screen
+      .getAllByRole('button', { name: 'Stop preview' })
+      .find((button) => !(button as HTMLButtonElement).disabled)
+    const loopButton = screen
+      .getAllByRole('button', { name: 'Disable loop preview' })
+      .find((button) => !(button as HTMLButtonElement).disabled)
+
+    expect(pauseButton).toBeInTheDocument()
+    expect(stopButton).toBeInTheDocument()
+    expect(loopButton).toBeInTheDocument()
   })
 
   // --- Transport / playback ---
@@ -322,15 +332,24 @@ describe('Sloploop', () => {
     await loadMp3File()
     await waitForWaveformReady()
 
-    const loopBtn = screen.getByRole('button', { name: 'Disable loop preview' })
+    const loopBtn = screen
+      .getAllByRole('button', { name: 'Disable loop preview' })
+      .find((button) => !(button as HTMLButtonElement).disabled) as HTMLButtonElement
     expect(loopBtn).toHaveAttribute('aria-pressed', 'true')
 
     await userEvent.click(loopBtn)
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Enable loop preview' })).toBeInTheDocument()
+      expect(
+        screen
+          .getAllByRole('button', { name: 'Enable loop preview' })
+          .some((button) => !(button as HTMLButtonElement).disabled),
+      ).toBe(true)
     })
-    expect(screen.getByRole('button', { name: 'Enable loop preview' })).toHaveAttribute('aria-pressed', 'false')
+    const updatedLoopButton = screen
+      .getAllByRole('button', { name: 'Enable loop preview' })
+      .find((button) => !(button as HTMLButtonElement).disabled)
+    expect(updatedLoopButton).toHaveAttribute('aria-pressed', 'false')
   })
 
   // --- Normalize output ---
@@ -521,6 +540,14 @@ describe('Sloploop', () => {
     await waitFor(() => {
       expect(screen.getByText('Processed waveform from current selection.')).toBeInTheDocument()
     })
+  })
+
+  it('shows a prompt to select a region before the processed preview is available', async () => {
+    render(<App />)
+    await loadMp3File()
+    await waitForWaveformReady()
+
+    expect(screen.getByText('Select a region to preview the result.')).toBeInTheDocument()
   })
 
   it('sets the crossfade slider max to 45% of the selection and clamps the value to 200ms', async () => {

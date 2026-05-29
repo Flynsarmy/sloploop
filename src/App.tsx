@@ -1450,6 +1450,7 @@ function App() {
     mode === 'loop' ? 'Loop Result' : mode === 'cut' ? 'Cut Result' : 'Clip Result'
 
   const showWaveform = Boolean(audioBuffer) && isWaveformReady
+  const showSelectRegionPrompt = showWaveform && !hasActiveSelection
 
   return (
     <div className="mx-auto grid w-[min(1400px,calc(100%-32px))] gap-4 py-5">
@@ -1509,6 +1510,29 @@ function App() {
             onToggleLoopPreview={toggleLoopPreview}
             footerPrimaryText="Drag region handles to define selection."
           />
+
+          {showSelectRegionPrompt ? (
+            <EditorPanel
+              sourceName={processedResultTitle}
+              subtitleText="Select a region to preview the result."
+              regionStart={0}
+              regionEnd={0}
+              audioLoaded
+              canProcess={false}
+              showWaveform
+              waveformRef={processedWaveformRef}
+              waveColor={WAVEFORM_BASE_COLOR}
+              transportState="stop"
+              loopPreviewEnabled={processedLoopPreviewEnabled}
+              allowFileDrop={false}
+              showImportCapMessage={false}
+              onPlaySelection={() => undefined}
+              onPauseSelection={() => undefined}
+              onStopPreview={() => undefined}
+              onToggleLoopPreview={() => undefined}
+              footerPrimaryText=""
+            />
+          ) : null}
 
           {hasActiveSelection && processedBuffer ? (
             <EditorPanel
