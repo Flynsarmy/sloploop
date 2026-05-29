@@ -1446,6 +1446,9 @@ function App() {
         ? 'Export a clean clip from the selected region with optional fades.'
         : 'Remove the selected range, crossfade the seam, then continue editing.'
 
+  const processedResultTitle =
+    mode === 'loop' ? 'Loop Result' : mode === 'cut' ? 'Cut Result' : 'Clip Result'
+
   const showWaveform = Boolean(audioBuffer) && isWaveformReady
 
   return (
@@ -1509,7 +1512,7 @@ function App() {
 
           {hasActiveSelection && processedBuffer ? (
             <EditorPanel
-              sourceName={`${sourceName || 'Source'} (processed)`}
+              sourceName={processedResultTitle}
               regionStart={0}
               regionEnd={processedBuffer.duration}
               audioLoaded
