@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent, RefObject } from 'react'
 import { Pause, Play, Repeat, Square } from 'lucide-react'
-
-type TransportState = 'play' | 'pause' | 'stop'
+import type { TransportState } from '../types/app'
 
 type EditorPanelProps = {
   sourceName: string

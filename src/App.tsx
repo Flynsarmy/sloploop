@@ -3,9 +3,31 @@ import type { ChangeEvent, DragEvent, WheelEvent as ReactWheelEvent } from 'reac
 import type WaveSurfer from 'wavesurfer.js'
 import type RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js'
 import AppHeader from './components/AppHeader'
-import ControlsPanel from './components/ControlsPanel'
-import EditorPanel from './components/EditorPanel'
-import type { LoopCurve, Mode } from './types/app'
+import AppWorkspace from './components/AppWorkspace'
+import {
+  bufferToWavBlob,
+  clamp,
+  copyBuffer,
+  createEmptyLike,
+  findNearestZeroCrossing,
+  normalizeBuffer,
+  smoothstep,
+  triggerDownload,
+} from './lib/audioUtils'
+import {
+  CROSSFADE_COLOR,
+  DEFAULT_CROSSFADE_MAX_SEC,
+  MAX_FILE_DURATION_SEC,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  PLAYHEAD_COLOR,
+  SELECTION_CROSSFADE_CURRENT_MAX_SEC,
+  SELECTION_CROSSFADE_FILL,
+  SELECTION_CROSSFADE_MAX_RATIO,
+  SELECTION_FILL_COLOR,
+  WAVEFORM_BASE_COLOR,
+} from './lib/appConstants'
+import type { LoopCurve, Mode, TransportState } from './types/app'
 
 declare global {
   interface Window {
@@ -13,160 +35,7 @@ declare global {
   }
 }
 
-const MAX_FILE_DURATION_SEC = 600
-const WAVEFORM_BASE_COLOR = '#4A9ABA'
-const PLAYHEAD_COLOR = '#FF0000'
-const CROSSFADE_COLOR = 'var(--color-accent-orange)'
-const SELECTION_FILL_COLOR = 'rgba(50, 50, 50, 0.45)'
-const SELECTION_CROSSFADE_FILL =
-  'color-mix(in srgb, var(--color-accent-orange) 72%, transparent)'
-const DEFAULT_CROSSFADE_MAX_SEC = 5
-const SELECTION_CROSSFADE_MAX_RATIO = 0.45
-const SELECTION_CROSSFADE_CURRENT_MAX_SEC = 0.2
-const MIN_ZOOM = 20
-const MAX_ZOOM = 400
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-function smoothstep(t: number): number {
-  return t * t * (3 - 2 * t)
-}
-
-function findNearestZeroCrossing(
-  buffer: AudioBuffer,
-  targetSample: number,
-  maxDistance = 2048,
-): number {
-  const target = clamp(targetSample, 0, buffer.length - 1)
-  let bestIndex = target
-  let bestValue = Number.POSITIVE_INFINITY
-
-  for (let offset = 0; offset <= maxDistance; offset += 1) {
-    const left = target - offset
-    const right = target + offset
-
-    if (left >= 0) {
-      let score = 0
-      for (let ch = 0; ch < buffer.numberOfChannels; ch += 1) {
-        score += Math.abs(buffer.getChannelData(ch)[left])
-      }
-      if (score < bestValue) {
-        bestValue = score
-        bestIndex = left
-      }
-    }
-
-    if (right < buffer.length) {
-      let score = 0
-      for (let ch = 0; ch < buffer.numberOfChannels; ch += 1) {
-        score += Math.abs(buffer.getChannelData(ch)[right])
-      }
-      if (score < bestValue) {
-        bestValue = score
-        bestIndex = right
-      }
-    }
-  }
-
-  return bestIndex
-}
-
-function createEmptyLike(buffer: AudioBuffer, length: number, ctx: AudioContext): AudioBuffer {
-  return ctx.createBuffer(buffer.numberOfChannels, length, buffer.sampleRate)
-}
-
-function copyBuffer(buffer: AudioBuffer, ctx: AudioContext): AudioBuffer {
-  const out = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate)
-  for (let ch = 0; ch < buffer.numberOfChannels; ch += 1) {
-    out.copyToChannel(buffer.getChannelData(ch), ch)
-  }
-  return out
-}
-
-function normalizeBuffer(buffer: AudioBuffer): void {
-  let peak = 0
-  for (let ch = 0; ch < buffer.numberOfChannels; ch += 1) {
-    const channel = buffer.getChannelData(ch)
-    for (let i = 0; i < channel.length; i += 1) {
-      peak = Math.max(peak, Math.abs(channel[i]))
-    }
-  }
-
-  if (peak <= 0 || peak >= 1) {
-    return
-  }
-
-  const gain = 1 / peak
-  for (let ch = 0; ch < buffer.numberOfChannels; ch += 1) {
-    const channel = buffer.getChannelData(ch)
-    for (let i = 0; i < channel.length; i += 1) {
-      channel[i] *= gain
-    }
-  }
-}
-
-function audioBufferToWavBytes(buffer: AudioBuffer): ArrayBuffer {
-  const channels = buffer.numberOfChannels
-  const sampleRate = buffer.sampleRate
-  const bitDepth = 16
-  const bytesPerSample = bitDepth / 8
-  const blockAlign = channels * bytesPerSample
-  const dataLength = buffer.length * blockAlign
-  const fileLength = 44 + dataLength
-  const out = new ArrayBuffer(fileLength)
-  const view = new DataView(out)
-
-  const writeText = (offset: number, text: string) => {
-    for (let i = 0; i < text.length; i += 1) {
-      view.setUint8(offset + i, text.charCodeAt(i))
-    }
-  }
-
-  writeText(0, 'RIFF')
-  view.setUint32(4, 36 + dataLength, true)
-  writeText(8, 'WAVE')
-  writeText(12, 'fmt ')
-  view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true)
-  view.setUint16(22, channels, true)
-  view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * blockAlign, true)
-  view.setUint16(32, blockAlign, true)
-  view.setUint16(34, bitDepth, true)
-  writeText(36, 'data')
-  view.setUint32(40, dataLength, true)
-
-  let offset = 44
-  for (let i = 0; i < buffer.length; i += 1) {
-    for (let ch = 0; ch < channels; ch += 1) {
-      const sample = clamp(buffer.getChannelData(ch)[i], -1, 1)
-      const pcm = sample < 0 ? sample * 0x8000 : sample * 0x7fff
-      view.setInt16(offset, pcm, true)
-      offset += 2
-    }
-  }
-
-  return out
-}
-
-function bufferToWavBlob(buffer: AudioBuffer): Blob {
-  return new Blob([audioBufferToWavBytes(buffer)], { type: 'audio/wav' })
-}
-
-function triggerDownload(blob: Blob, filename: string): void {
-  const href = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = href
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(href)
-}
-
 function App() {
-  type TransportState = 'play' | 'pause' | 'stop'
-
   const [mode, setMode] = useState<Mode>('loop')
   const [sourceName, setSourceName] = useState<string>('')
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null)
@@ -1530,117 +1399,65 @@ function App() {
     mode === 'loop' ? 'Loop Result' : mode === 'cut' ? 'Cut Result' : 'Clip Result'
 
   const showWaveform = Boolean(audioBuffer) && isWaveformReady
-  const showSelectRegionPrompt = showWaveform && !hasActiveSelection
 
   return (
     <div className="mx-auto grid w-[min(1400px,calc(100%-32px))] gap-4 py-5">
       <AppHeader message={message} error={error} />
-
-      <main
-        className={audioBuffer ? 'grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]' : 'grid gap-4'}
-      >
-        {audioBuffer ? (
-          <ControlsPanel
-            mode={mode}
-            modeHelp={modeHelp}
-            loopCrossfadeSec={loopCrossfadeSec}
-            crossfadeMaxSec={crossfadeMaxSec}
-            loopCurve={loopCurve}
-            snapToZeroCrossing={snapToZeroCrossing}
-            embedLoopSidecar={embedLoopSidecar}
-            clipFadeInMs={clipFadeInMs}
-            clipFadeOutMs={clipFadeOutMs}
-            cutCrossfadeSec={cutCrossfadeSec}
-            canProcess={canProcess}
-            hasCutUndo={hasCutUndo}
-            onModeChange={setMode}
-            onLoopCrossfadeChange={handleLoopCrossfadeChange}
-            onLoopCurveChange={setLoopCurve}
-            onSnapToZeroCrossingChange={setSnapToZeroCrossing}
-            onEmbedLoopSidecarChange={setEmbedLoopSidecar}
-            onClipFadeInChange={setClipFadeInMs}
-            onClipFadeOutChange={setClipFadeOutMs}
-            onCutCrossfadeChange={handleCutCrossfadeChange}
-            onWheelNudge={onWheelNudge}
-            onApplyCut={applyCut}
-            onUndoCut={undoCut}
-            onExportWav={exportWav}
-          />
-        ) : null}
-
-        <div className="grid gap-4">
-          <EditorPanel
-            sourceName={sourceName}
-            regionStart={regionStart}
-            regionEnd={regionEnd}
-            selectionDurationSec={audioBuffer?.duration}
-            audioLoaded={Boolean(audioBuffer)}
-            canProcess={canProcess}
-            showWaveform={showWaveform}
-            waveformRef={waveformRef}
-            waveColor={WAVEFORM_BASE_COLOR}
-            transportState={transportState}
-            loopPreviewEnabled={loopPreviewEnabled}
-            normalizeOutput={normalizeOutput}
-            onNormalizeOutputChange={setNormalizeOutput}
-            onDrop={onDrop}
-            onFileInput={onFileInput}
-            onPlaySelection={() => void previewSelection()}
-            onPauseSelection={pauseSelection}
-            onStopPreview={stopPreview}
-            onToggleLoopPreview={toggleLoopPreview}
-            onRegionStartCommit={handleRegionStartCommit}
-            onRegionEndCommit={handleRegionEndCommit}
-            footerPrimaryText="Drag region handles to define selection."
-          />
-
-          {showSelectRegionPrompt ? (
-            <EditorPanel
-              sourceName={processedResultTitle}
-              subtitleText="Select a region to preview the result."
-              regionStart={0}
-              regionEnd={0}
-              audioLoaded
-              canProcess={false}
-              showWaveform
-              waveformRef={processedWaveformRef}
-              waveColor={WAVEFORM_BASE_COLOR}
-              transportState="stop"
-              loopPreviewEnabled={processedLoopPreviewEnabled}
-              allowFileDrop={false}
-              showImportCapMessage={false}
-              onPlaySelection={() => undefined}
-              onPauseSelection={() => undefined}
-              onStopPreview={() => undefined}
-              onToggleLoopPreview={() => undefined}
-              footerPrimaryText=""
-            />
-          ) : null}
-
-          {hasActiveSelection && processedBuffer ? (
-            <EditorPanel
-              sourceName={processedResultTitle}
-              regionStart={0}
-              regionEnd={processedBuffer.duration}
-              audioLoaded
-              canProcess
-              showWaveform
-              waveformRef={processedWaveformRef}
-              waveColor={WAVEFORM_BASE_COLOR}
-              transportState={processedTransportState}
-              loopPreviewEnabled={processedLoopPreviewEnabled}
-              allowFileDrop={false}
-              showImportCapMessage={false}
-              onPlaySelection={() => void playProcessedPreview()}
-              onPauseSelection={pauseProcessedPreview}
-              onStopPreview={stopProcessedPreview}
-              onToggleLoopPreview={toggleProcessedLoopPreview}
-              subtitleText="Processed waveform from current selection."
-              footerPrimaryText=""
-            />
-          ) : null}
-        </div>
-      </main>
+      <AppWorkspace
+        audioBuffer={audioBuffer}
+        sourceName={sourceName}
+        mode={mode}
+        modeHelp={modeHelp}
+        loopCrossfadeSec={loopCrossfadeSec}
+        crossfadeMaxSec={crossfadeMaxSec}
+        loopCurve={loopCurve}
+        snapToZeroCrossing={snapToZeroCrossing}
+        embedLoopSidecar={embedLoopSidecar}
+        clipFadeInMs={clipFadeInMs}
+        clipFadeOutMs={clipFadeOutMs}
+        cutCrossfadeSec={cutCrossfadeSec}
+        canProcess={canProcess}
+        hasCutUndo={hasCutUndo}
+        regionStart={regionStart}
+        regionEnd={regionEnd}
+        showWaveform={showWaveform}
+        hasActiveSelection={hasActiveSelection}
+        processedBuffer={processedBuffer}
+        processedResultTitle={processedResultTitle}
+        normalizeOutput={normalizeOutput}
+        waveformRef={waveformRef}
+        processedWaveformRef={processedWaveformRef}
+        transportState={transportState}
+        processedTransportState={processedTransportState}
+        loopPreviewEnabled={loopPreviewEnabled}
+        processedLoopPreviewEnabled={processedLoopPreviewEnabled}
+        waveColor={WAVEFORM_BASE_COLOR}
+        onModeChange={setMode}
+        onLoopCrossfadeChange={handleLoopCrossfadeChange}
+        onLoopCurveChange={setLoopCurve}
+        onSnapToZeroCrossingChange={setSnapToZeroCrossing}
+        onEmbedLoopSidecarChange={setEmbedLoopSidecar}
+        onClipFadeInChange={setClipFadeInMs}
+        onClipFadeOutChange={setClipFadeOutMs}
+        onCutCrossfadeChange={handleCutCrossfadeChange}
+        onWheelNudge={onWheelNudge}
+        onApplyCut={applyCut}
+        onUndoCut={undoCut}
+        onExportWav={exportWav}
+        onDrop={onDrop}
+        onFileInput={onFileInput}
+        onPlaySelection={() => void previewSelection()}
+        onPauseSelection={pauseSelection}
+        onStopPreview={stopPreview}
+        onToggleLoopPreview={toggleLoopPreview}
+        onRegionStartCommit={handleRegionStartCommit}
+        onRegionEndCommit={handleRegionEndCommit}
+        onNormalizeOutputChange={setNormalizeOutput}
+        onPlayProcessedPreview={() => void playProcessedPreview()}
+        onPauseProcessedPreview={pauseProcessedPreview}
+        onStopProcessedPreview={stopProcessedPreview}
+        onToggleProcessedLoopPreview={toggleProcessedLoopPreview}
+      />
     </div>
   )
 }
