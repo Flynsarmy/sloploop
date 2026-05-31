@@ -214,7 +214,7 @@ function LoopSettings({
       <label className={checkLabelClassName}>
         <Checkbox
           checked={snapToZeroCrossing}
-          title="Move region boundaries to the nearest zero crossing to reduce clicks and pops."
+          title="Move region boundaries to the nearest zero crossing (where the waveform crosses the center line at 0 amplitude) to reduce clicks and pops."
           onChange={(event: CheckboxEvent) => onSnapToZeroCrossingChange(event.target.checked)}
         />
         Snap region bounds to nearest zero crossing
@@ -325,7 +325,7 @@ function CutSettings({
       <label className={checkLabelClassName}>
         <Checkbox
           checked={snapToZeroCrossing}
-          title="Move region boundaries to the nearest zero crossing to reduce clicks and pops."
+          title="Move region boundaries to the nearest zero crossing (where the waveform crosses the center line at 0 amplitude) to reduce clicks and pops."
           onChange={(event: CheckboxEvent) => onSnapToZeroCrossingChange(event.target.checked)}
         />
         Snap region bounds to nearest zero crossing
