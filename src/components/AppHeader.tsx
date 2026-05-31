@@ -1,9 +1,11 @@
 type AppHeaderProps = {
   message: string
   error: string
+  canChangeFile?: boolean
+  onChangeFile?: () => void
 }
 
-function AppHeader({ message, error }: AppHeaderProps) {
+function AppHeader({ message, error, canChangeFile = false, onChangeFile }: AppHeaderProps) {
   return (
     <header className="flex flex-col gap-4 rounded-2xl border border-panel-border bg-panel-bg p-5 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex items-center gap-4">
@@ -37,6 +39,15 @@ function AppHeader({ message, error }: AppHeaderProps) {
       </div>
       <div className="flex flex-col gap-2 text-sm lg:items-end lg:text-right">
         <span>{message}</span>
+        {canChangeFile ? (
+          <button
+            type="button"
+            onClick={onChangeFile}
+            className="w-fit border-0 bg-transparent p-0 text-sm text-accent-orange underline underline-offset-2 transition hover:text-app-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-orange lg:self-end"
+          >
+            Change file
+          </button>
+        ) : null}
         {error ? (
           <span className="rounded-full border border-error-border bg-error-bg px-2.5 py-1 text-error-text">
             {error}

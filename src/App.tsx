@@ -28,6 +28,8 @@ import {
 } from './lib/appConstants'
 import type { LoopCurve, Mode, TransportState } from './types/app'
 
+const INITIAL_MESSAGE = 'Drop an audio file or use Open File to begin.'
+
 declare global {
   interface Window {
     wavesurfer: WaveSurfer | null
@@ -41,7 +43,7 @@ function App() {
   const [regionStart, setRegionStart] = useState(0)
   const [regionEnd, setRegionEnd] = useState(0)
   const [zoom, setZoom] = useState(80)
-  const [message, setMessage] = useState('Drop an audio file or use Open File to begin.')
+  const [message, setMessage] = useState(INITIAL_MESSAGE)
   const [error, setError] = useState<string>('')
   const [isBusy, setIsBusy] = useState(false)
 
@@ -838,6 +840,50 @@ function App() {
     [getAudioContext, stopPreview, stopProcessedPreview],
   )
 
+  const resetToInitialState = useCallback(() => {
+    stopPreview()
+    stopProcessedPreview()
+    clearSelectionRef.current(0)
+
+    undoRef.current = []
+    setUndoCount(0)
+    setAudioBuffer(null)
+    setProcessedBuffer(null)
+    setNormalizedDisplayBuffer(null)
+    setHasActiveSelection(false)
+    setSourceName('')
+    setMessage(INITIAL_MESSAGE)
+    setError('')
+    setMode('loop')
+    setRegionStart(0)
+    setRegionEnd(0)
+    setZoom(80)
+    setIsWaveformReady(false)
+    setLoopCrossfadeSec(0.12)
+    setCrossfadeMaxSec(DEFAULT_CROSSFADE_MAX_SEC)
+    setLoopCurve('smoothstep')
+    setSnapToZeroCrossing(true)
+    setEmbedLoopSidecar(false)
+    setClipFadeInMs(16)
+    setClipFadeOutMs(16)
+    setCutCrossfadeSec(0.02)
+    setNormalizeOutput(true)
+    setTransportState('stop')
+    setLoopPreviewEnabled(true)
+    setProcessedTransportState('stop')
+    setProcessedLoopPreviewEnabled(true)
+  }, [stopPreview, stopProcessedPreview])
+
+  const handleChangeFile = useCallback(() => {
+    const shouldReset = window.confirm(
+      'Clear the current file and reset the editor so you can load a new one?',
+    )
+    if (!shouldReset) {
+      return
+    }
+    resetToInitialState()
+  }, [resetToInitialState])
+
   const onFileInput = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0]
@@ -1539,7 +1585,12 @@ function App() {
 
   return (
     <div className="mx-auto grid w-[min(1400px,calc(100%-32px))] gap-4 py-5">
-      <AppHeader message={message} error={error} />
+      <AppHeader
+        message={message}
+        error={error}
+        canChangeFile={Boolean(audioBuffer) && !isBusy}
+        onChangeFile={handleChangeFile}
+      />
       <AppWorkspace
         audioBuffer={audioBuffer}
         sourceName={sourceName}
