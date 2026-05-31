@@ -15,7 +15,6 @@ import {
   triggerDownload,
 } from './lib/audioUtils'
 import {
-  CROSSFADE_COLOR,
   DEFAULT_CROSSFADE_MAX_SEC,
   MAX_FILE_DURATION_SEC,
   MAX_ZOOM,
@@ -86,6 +85,10 @@ function App() {
   const styleRegionRef = useRef<(start: number, end: number, element?: HTMLElement | null) => void>(
     () => {},
   )
+  const updateSelectionOverlaysRef = useRef<(start: number, end: number) => void>(() => {})
+  const clearSelectionOverlaysRef = useRef<() => void>(() => {})
+  const leftSelectionOverlayRef = useRef<HTMLDivElement | null>(null)
+  const rightSelectionOverlayRef = useRef<HTMLDivElement | null>(null)
   const applyWaveColorsRef = useRef<(selectionActive: boolean) => void>(() => {})
   const clearSelectionRef = useRef<(newDuration?: number) => void>(() => {})
   const applySelectionCrossfadePresetRef = useRef<(start: number, end: number) => void>(() => {})
@@ -222,9 +225,10 @@ function App() {
 
       element.style.background = `linear-gradient(90deg, ${SELECTION_CROSSFADE_FILL} 0%, ${SELECTION_CROSSFADE_FILL} ${edgeStop}, ${SELECTION_FILL_COLOR} ${edgeStop}, ${SELECTION_FILL_COLOR} ${innerStop}, ${SELECTION_CROSSFADE_FILL} ${innerStop}, ${SELECTION_CROSSFADE_FILL} 100%)`
       element.style.backdropFilter = 'brightness(1.85) saturate(1.2)'
-      element.style.borderLeft = `1px solid ${CROSSFADE_COLOR}`
-      element.style.borderRight = `1px solid ${CROSSFADE_COLOR}`
+      element.style.borderLeft = '1px solid rgba(255, 255, 255, 0.95)'
+      element.style.borderRight = '1px solid rgba(255, 255, 255, 0.95)'
       element.style.boxSizing = 'border-box'
+      element.style.zIndex = '4'
     },
     [getSelectionCrossfadeSeconds],
   )
@@ -702,6 +706,7 @@ function App() {
       setOptions?: (options: { cursorWidth: number }) => void
     })?.setOptions?.({ cursorWidth: 0 })
     setTransportState('stop')
+    clearSelectionOverlaysRef.current()
     applyWaveColors()
   }, [applyWaveColors, audioBuffer])
 
@@ -1053,6 +1058,67 @@ function App() {
       const scrollContainer =
         wrapper.parentElement instanceof HTMLElement ? wrapper.parentElement : wrapper
 
+      const leftOverlay = document.createElement('div')
+      leftOverlay.dataset.selectionOverlay = 'left'
+      leftOverlay.style.position = 'absolute'
+      leftOverlay.style.top = '0'
+      leftOverlay.style.bottom = '0'
+      leftOverlay.style.left = '0'
+      leftOverlay.style.width = '0'
+      leftOverlay.style.background = 'rgba(0, 0, 0, 0.42)'
+      leftOverlay.style.pointerEvents = 'none'
+      leftOverlay.style.zIndex = '3'
+
+      const rightOverlay = document.createElement('div')
+      rightOverlay.dataset.selectionOverlay = 'right'
+      rightOverlay.style.position = 'absolute'
+      rightOverlay.style.top = '0'
+      rightOverlay.style.bottom = '0'
+      rightOverlay.style.left = '0'
+      rightOverlay.style.width = '0'
+      rightOverlay.style.background = 'rgba(0, 0, 0, 0.42)'
+      rightOverlay.style.pointerEvents = 'none'
+      rightOverlay.style.zIndex = '3'
+
+      wrapper.append(leftOverlay, rightOverlay)
+      leftSelectionOverlayRef.current = leftOverlay
+      rightSelectionOverlayRef.current = rightOverlay
+
+      clearSelectionOverlaysRef.current = () => {
+        if (!leftSelectionOverlayRef.current || !rightSelectionOverlayRef.current) {
+          return
+        }
+        leftSelectionOverlayRef.current.style.width = '0'
+        rightSelectionOverlayRef.current.style.width = '0'
+      }
+
+      updateSelectionOverlaysRef.current = (start: number, end: number) => {
+        const left = leftSelectionOverlayRef.current
+        const right = rightSelectionOverlayRef.current
+        const wsCurrent = wavesurferRef.current
+        if (!left || !right || !wsCurrent) {
+          return
+        }
+
+        const duration = wsCurrent.getDuration()
+        if (duration <= 0) {
+          left.style.width = '0'
+          right.style.width = '0'
+          return
+        }
+
+        const totalWidth = Math.max(wrapper.scrollWidth, wrapper.clientWidth)
+        const startRatio = clamp(start / duration, 0, 1)
+        const endRatio = clamp(end / duration, 0, 1)
+        const startPx = clamp(startRatio * totalWidth, 0, totalWidth)
+        const endPx = clamp(endRatio * totalWidth, startPx, totalWidth)
+
+        left.style.left = '0px'
+        left.style.width = `${startPx}px`
+        right.style.left = `${endPx}px`
+        right.style.width = `${Math.max(0, totalWidth - endPx)}px`
+      }
+
       regions.enableDragSelection({
         color: 'rgba(74, 154, 186, 0.35)',
       })
@@ -1073,6 +1139,7 @@ function App() {
           stopPreview()
         }
         styleRegionRef.current(current.start, current.end, (current as { element?: HTMLElement }).element)
+        updateSelectionOverlaysRef.current(current.start, current.end)
         applyWaveColorsRef.current(true)
         syncRegion(current.start, current.end)
         setHasActiveSelection(true)
@@ -1087,6 +1154,7 @@ function App() {
           clampSelectionCrossfadeToBounds(region.start, region.end)
         }
         styleRegionRef.current(region.start, region.end, (region as { element?: HTMLElement }).element)
+        updateSelectionOverlaysRef.current(region.start, region.end)
         applyWaveColorsRef.current(true)
         syncRegion(region.start, region.end)
         setHasActiveSelection(true)
@@ -1099,6 +1167,12 @@ function App() {
 
       regions.on('region-removed', () => {
         const active = regions.getRegions().length > 0
+        if (active) {
+          const current = regions.getRegions()[0]
+          updateSelectionOverlaysRef.current(current.start, current.end)
+        } else {
+          clearSelectionOverlaysRef.current()
+        }
         applyWaveColorsRef.current(active)
         setHasActiveSelection(active)
       })
@@ -1158,6 +1232,12 @@ function App() {
       cleanup = () => {
         stopPreview()
         stopProcessedPreview()
+        leftSelectionOverlayRef.current?.remove()
+        rightSelectionOverlayRef.current?.remove()
+        leftSelectionOverlayRef.current = null
+        rightSelectionOverlayRef.current = null
+        updateSelectionOverlaysRef.current = () => {}
+        clearSelectionOverlaysRef.current = () => {}
         scrollContainer.removeEventListener('pointerdown', onPointerDown)
         scrollContainer.removeEventListener('pointermove', onPointerMove)
         scrollContainer.removeEventListener('pointerup', stopMiddlePan)
@@ -1334,11 +1414,19 @@ function App() {
       return
     }
     ws.zoom(zoom)
+
+    const activeRegion = regionsRef.current?.getRegions()[0]
+    if (activeRegion) {
+      requestAnimationFrame(() => {
+        updateSelectionOverlaysRef.current(activeRegion.start, activeRegion.end)
+      })
+    }
   }, [audioBuffer, isWaveformReady, zoom])
 
   useEffect(() => {
     const activeRegion = regionsRef.current?.getRegions()[0]
     if (!activeRegion) {
+      clearSelectionOverlaysRef.current()
       return
     }
     styleRegion(
@@ -1346,6 +1434,7 @@ function App() {
       activeRegion.end,
       (activeRegion as { element?: HTMLElement }).element,
     )
+    updateSelectionOverlaysRef.current(activeRegion.start, activeRegion.end)
   }, [clipFadeInMs, clipFadeOutMs, cutCrossfadeSec, loopCrossfadeSec, mode, styleRegion])
 
   const toggleLoopPreview = useCallback(() => {
