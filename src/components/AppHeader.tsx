@@ -43,7 +43,7 @@ function AppHeader({ message, error, canChangeFile = false, onChangeFile }: AppH
           <button
             type="button"
             onClick={onChangeFile}
-            className="w-fit border-0 bg-transparent p-0 text-sm text-accent-orange underline underline-offset-2 transition hover:text-app-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-orange lg:self-end"
+            className="w-fit cursor-pointer border-0 bg-transparent p-0 text-sm text-accent-orange underline underline-offset-2 transition hover:text-app-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-orange lg:self-end"
           >
             Change file
           </button>

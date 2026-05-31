@@ -265,7 +265,7 @@ function EditableSecondsValue({
         setDraftValue(value.toFixed(3))
         setIsEditing(true)
       }}
-      className="inline-flex items-center rounded-none border border-transparent px-1 py-0.5 text-accent-orange underline decoration-dotted decoration-current underline-offset-2 transition hover:border-panel-border hover:bg-control-bg/40"
+      className="inline-flex cursor-pointer items-center rounded-none border border-transparent px-1 py-0.5 text-accent-orange underline decoration-dotted decoration-current underline-offset-2 transition hover:border-panel-border hover:bg-control-bg/40"
     >
       {value.toFixed(3)} s
     </button>
