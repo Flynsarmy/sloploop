@@ -257,6 +257,14 @@ function App() {
     setCutCrossfadeSec(clamp(nextValue, 0, nextMax))
   }, [])
 
+  const clampSelectionCrossfadeToBounds = useCallback((start: number, end: number) => {
+    const selectionSeconds = Math.max(0, end - start)
+    const nextMax = Math.max(0.001, selectionSeconds * SELECTION_CROSSFADE_MAX_RATIO)
+    setCrossfadeMaxSec(nextMax)
+    setLoopCrossfadeSec((current) => clamp(current, 0.001, nextMax))
+    setCutCrossfadeSec((current) => clamp(current, 0, nextMax))
+  }, [])
+
   const handleLoopCrossfadeChange = useCallback(
     (value: number) => {
       setLoopCrossfadeSec(clamp(value, 0.001, crossfadeMaxSec))
@@ -269,6 +277,66 @@ function App() {
       setCutCrossfadeSec(clamp(value, 0, crossfadeMaxSec))
     },
     [crossfadeMaxSec],
+  )
+
+  const commitRegionBounds = useCallback(
+    (start: number, end: number) => {
+      const duration = audioBuffer?.duration ?? 0
+      if (duration <= 0) {
+        return
+      }
+
+      const safeStart = clamp(start, 0, Math.max(0, duration - 0.001))
+      const safeEnd = clamp(end, safeStart + 0.001, duration)
+
+      const activeRegion = regionsRef.current?.getRegions()[0]
+      if (
+        activeRegion &&
+        typeof (activeRegion as { setOptions?: (options: { start: number; end: number }) => void }).setOptions ===
+          'function'
+      ) {
+        ;(activeRegion as { setOptions: (options: { start: number; end: number }) => void }).setOptions({
+          start: safeStart,
+          end: safeEnd,
+        })
+      }
+
+      setRegionStart(safeStart)
+      setRegionEnd(safeEnd)
+      setHasActiveSelection(true)
+      clampSelectionCrossfadeToBounds(safeStart, safeEnd)
+    },
+    [audioBuffer, clampSelectionCrossfadeToBounds],
+  )
+
+  const handleRegionStartCommit = useCallback(
+    (value: number) => {
+      const duration = audioBuffer?.duration ?? 0
+      if (duration <= 0) {
+        return
+      }
+
+      const maxStart = Math.max(0, duration - 0.001)
+      const nextStart = clamp(value, 0, maxStart)
+      const nextEnd = clamp(regionEnd, nextStart + 0.001, duration)
+      commitRegionBounds(nextStart, nextEnd)
+    },
+    [audioBuffer, commitRegionBounds, regionEnd],
+  )
+
+  const handleRegionEndCommit = useCallback(
+    (value: number) => {
+      const duration = audioBuffer?.duration ?? 0
+      if (duration <= 0) {
+        return
+      }
+
+      const minEnd = Math.min(duration, regionStart + 0.001)
+      const nextEnd = clamp(value, minEnd, duration)
+      const nextStart = clamp(regionStart, 0, Math.max(0, nextEnd - 0.001))
+      commitRegionBounds(nextStart, nextEnd)
+    },
+    [audioBuffer, commitRegionBounds, regionStart],
   )
 
   const styleRegion = useCallback(
@@ -1135,7 +1203,7 @@ function App() {
 
       regions.on('region-updated', (region) => {
         if (!isRestoringRegionRef.current) {
-          applySelectionCrossfadePresetRef.current(region.start, region.end)
+          clampSelectionCrossfadeToBounds(region.start, region.end)
         }
         styleRegionRef.current(region.start, region.end, (region as { element?: HTMLElement }).element)
         applyWaveColorsRef.current(true)
@@ -1493,6 +1561,7 @@ function App() {
             sourceName={sourceName}
             regionStart={regionStart}
             regionEnd={regionEnd}
+            selectionDurationSec={audioBuffer?.duration}
             audioLoaded={Boolean(audioBuffer)}
             canProcess={canProcess}
             showWaveform={showWaveform}
@@ -1508,6 +1577,8 @@ function App() {
             onPauseSelection={pauseSelection}
             onStopPreview={stopPreview}
             onToggleLoopPreview={toggleLoopPreview}
+            onRegionStartCommit={handleRegionStartCommit}
+            onRegionEndCommit={handleRegionEndCommit}
             footerPrimaryText="Drag region handles to define selection."
           />
 

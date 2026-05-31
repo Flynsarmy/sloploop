@@ -149,6 +149,13 @@ function simulateRegionCreated(start: number, end: number) {
   regionHandlers.get('region-created')?.(region)
 }
 
+/** Simulate a region-updated event at the given time range. */
+function simulateRegionUpdated(start: number, end: number) {
+  const element = document.createElement('div')
+  const region = { id: 'test-region', start, end, remove: vi.fn(), element }
+  regionHandlers.get('region-updated')?.(region)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -173,6 +180,8 @@ describe('Sloploop', () => {
 
     expect(screen.getByText('Open File')).toBeInTheDocument()
     expect(screen.getByText('Supported: WAV, OGG, MP3, AIFF, AIF')).toBeInTheDocument()
+    expect(screen.queryByText(/^Start:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^End:/)).not.toBeInTheDocument()
   })
 
   // --- File loading ---
@@ -445,6 +454,7 @@ describe('Sloploop', () => {
   it('Apply Cut then Undo Cut restores the buffer and shows success message', async () => {
     render(<App />)
     await loadMp3File()
+    const sourcePanel = screen.getByRole('heading', { name: /car-idle-106494/i }).closest('section')
 
     await userEvent.click(screen.getByText('CUT'))
     await waitFor(() => expect(screen.getByText('Cut Settings')).toBeInTheDocument())
@@ -452,7 +462,10 @@ describe('Sloploop', () => {
     // Create a mid-file selection so the cut leaves audio on both sides.
     // Use waitFor on the start-time display so we know the state actually settled.
     simulateRegionCreated(0.5, 1.5)
-    await waitFor(() => expect(screen.getByText('Start: 0.500s')).toBeInTheDocument())
+    await waitFor(() => {
+      expect(sourcePanel?.textContent).toContain('Start:')
+      expect(sourcePanel?.textContent).toContain('0.500')
+    })
 
     await userEvent.click(screen.getByText('Apply Cut'))
 
@@ -564,6 +577,44 @@ describe('Sloploop', () => {
     })
   })
 
+  it('keeps the crossfade value when resizing a region and only clamps it to the new bounds', async () => {
+    render(<App />)
+    await loadMp3File()
+    await waitForWaveformReady()
+
+    simulateRegionCreated(0.25, 1.25)
+
+    const slider = screen.getByRole('slider') as HTMLInputElement
+    await waitFor(() => {
+      expect(slider.value).toBe('0.1')
+    })
+
+    simulateRegionUpdated(0.25, 2.5)
+
+    await waitFor(() => {
+      expect(slider.value).toBe('0.1')
+    })
+  })
+
+  it('clamps the existing crossfade when a resized region becomes too small for it', async () => {
+    render(<App />)
+    await loadMp3File()
+    await waitForWaveformReady()
+
+    simulateRegionCreated(0.25, 2.5)
+
+    const slider = screen.getByRole('slider') as HTMLInputElement
+    await waitFor(() => {
+      expect(slider.value).toBe('0.2')
+    })
+
+    simulateRegionUpdated(0.25, 0.4)
+
+    await waitFor(() => {
+      expect(Number(slider.value)).toBeCloseTo(0.0675, 4)
+    })
+  })
+
   it('lets the crossfade seconds value be edited directly and committed with Enter', async () => {
     render(<App />)
     await loadMp3File()
@@ -587,12 +638,15 @@ describe('Sloploop', () => {
     render(<App />)
     await loadMp3File()
     await waitForWaveformReady()
+    const sourcePanel = screen.getByRole('heading', { name: /car-idle-106494/i }).closest('section')
 
     simulateRegionCreated(0.25, 1.75)
 
     await waitFor(() => {
-      expect(screen.getByText('Start: 0.250s')).toBeInTheDocument()
-      expect(screen.getByText('End: 1.750s')).toBeInTheDocument()
+      expect(sourcePanel?.textContent).toContain('Start:')
+      expect(sourcePanel?.textContent).toContain('0.250')
+      expect(sourcePanel?.textContent).toContain('End:')
+      expect(sourcePanel?.textContent).toContain('1.750')
     })
   })
 })

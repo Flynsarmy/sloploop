@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent, RefObject } from 'react'
 import { Pause, Play, Repeat, Square } from 'lucide-react'
 
@@ -19,6 +20,9 @@ type EditorPanelProps = {
   showImportCapMessage?: boolean
   footerPrimaryText?: string
   footerSecondaryText?: string
+  selectionDurationSec?: number
+  onRegionStartCommit?: (value: number) => void
+  onRegionEndCommit?: (value: number) => void
   onDrop?: (event: DragEvent<HTMLDivElement>) => void | Promise<void>
   onFileInput?: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>
   normalizeOutput?: boolean
@@ -45,6 +49,9 @@ function EditorPanel({
   showImportCapMessage = true,
   footerPrimaryText = 'Drag region handles to define selection.',
   footerSecondaryText,
+  selectionDurationSec,
+  onRegionStartCommit,
+  onRegionEndCommit,
   normalizeOutput,
   onNormalizeOutputChange,
   onDrop,
@@ -54,11 +61,17 @@ function EditorPanel({
   onStopPreview,
   onToggleLoopPreview,
 }: EditorPanelProps) {
+  const boundsEditable =
+    typeof selectionDurationSec === 'number' && onRegionStartCommit !== undefined && onRegionEndCommit !== undefined
+
   const controlButtonClass =
     'inline-flex h-10 w-10 items-center justify-center rounded-none border bg-control-bg transition disabled:cursor-not-allowed disabled:opacity-50'
 
   const getTransportClass = (isActive: boolean) =>
     `${controlButtonClass} ${isActive ? 'border-accent-orange text-accent-orange' : 'border-panel-border text-white hover:border-app-muted'}`
+
+  const maxStart = boundsEditable ? Math.max(0, (selectionDurationSec ?? 0) - 0.001) : 0
+  const minEnd = boundsEditable ? Math.min(selectionDurationSec ?? 0, regionStart + 0.001) : 0
 
   return (
     <section className="grid min-h-0 gap-3 rounded-2xl border border-panel-border bg-panel-bg p-4">
@@ -67,10 +80,36 @@ function EditorPanel({
           <h2 className="m-0 text-[22px] font-semibold">{sourceName || 'No source loaded'}</h2>
           {subtitleText ? <p className="mt-1 mb-0 text-[13px] text-app-muted">{subtitleText}</p> : null}
         </div>
-        <div className="grid gap-1 text-[13px] text-app-muted md:text-right">
-          <span>Start: {regionStart.toFixed(3)}s</span>
-          <span>End: {regionEnd.toFixed(3)}s</span>
-        </div>
+        {audioLoaded ? (
+          <div className="grid gap-1 text-[13px] text-app-muted md:text-right">
+            <span className="flex items-center gap-1 md:justify-end">
+              <span>Start:</span>
+              {boundsEditable ? (
+                <EditableSecondsValue
+                  value={regionStart}
+                  min={0}
+                  max={maxStart}
+                  onCommit={onRegionStartCommit}
+                />
+              ) : (
+                <span>{regionStart.toFixed(3)}s</span>
+              )}
+            </span>
+            <span className="flex items-center gap-1 md:justify-end">
+              <span>End:</span>
+              {boundsEditable ? (
+                <EditableSecondsValue
+                  value={regionEnd}
+                  min={minEnd}
+                  max={selectionDurationSec ?? 0}
+                  onCommit={onRegionEndCommit}
+                />
+              ) : (
+                <span>{regionEnd.toFixed(3)}s</span>
+              )}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div
@@ -164,6 +203,73 @@ function EditorPanel({
         {footerSecondaryText ? <span>{footerSecondaryText}</span> : null}
       </div>
     </section>
+  )
+}
+
+function EditableSecondsValue({
+  value,
+  min,
+  max,
+  onCommit,
+}: {
+  value: number
+  min: number
+  max: number
+  onCommit: (value: number) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draftValue, setDraftValue] = useState(value.toFixed(3))
+
+  const commitDraft = () => {
+    const parsedValue = Number(draftValue)
+    if (Number.isFinite(parsedValue)) {
+      onCommit(parsedValue)
+      setIsEditing(false)
+      return
+    }
+    setDraftValue(value.toFixed(3))
+    setIsEditing(false)
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        type="number"
+        inputMode="decimal"
+        min={min}
+        max={max}
+        step={0.001}
+        value={draftValue}
+        autoFocus
+        onChange={(event) => setDraftValue(event.target.value)}
+        onBlur={commitDraft}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commitDraft()
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            setDraftValue(value.toFixed(3))
+            setIsEditing(false)
+          }
+        }}
+        className="inline-flex w-24 rounded-none border border-panel-border bg-control-bg px-2 py-1 text-accent-orange outline-none transition focus:border-accent-orange"
+      />
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setDraftValue(value.toFixed(3))
+        setIsEditing(true)
+      }}
+      className="inline-flex items-center rounded-none border border-transparent px-1 py-0.5 text-accent-orange underline decoration-dotted decoration-current underline-offset-2 transition hover:border-panel-border hover:bg-control-bg/40"
+    >
+      {value.toFixed(3)} s
+    </button>
   )
 }
 
