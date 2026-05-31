@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/preact'
+import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../src/App'
@@ -294,6 +294,25 @@ describe('Sloploop', () => {
     expect(screen.getByText('Loop Settings')).toBeInTheDocument()
   })
 
+  it('updates mode help copy when switching tabs', async () => {
+    render(<App />)
+    await loadMp3File()
+
+    expect(
+      screen.getByText('Create a seamless loop by blending end into beginning.'),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('CLIP'))
+    expect(
+      screen.getByText('Export a clean clip from the selected region with optional fades.'),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('CUT'))
+    expect(
+      screen.getByText('Remove the selected range, crossfade the seam, then continue editing.'),
+    ).toBeInTheDocument()
+  })
+
   it('shows Clip settings after switching to CLIP mode', async () => {
     render(<App />)
     await loadMp3File()
@@ -442,6 +461,21 @@ describe('Sloploop', () => {
     })
   })
 
+  it('Apply Cut shows an error when no inner selection is set and zero-crossing snap is off', async () => {
+    render(<App />)
+    await loadMp3File()
+
+    await userEvent.click(screen.getByText('CUT'))
+    await userEvent.click(screen.getByLabelText('Snap region bounds to nearest zero crossing'))
+    await userEvent.click(screen.getByText('Apply Cut'))
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/cut selection must leave audio on both sides/i),
+      ).toBeInTheDocument()
+    })
+  })
+
   it('Undo Cut button is disabled when there is nothing to undo', async () => {
     render(<App />)
     await loadMp3File()
@@ -541,6 +575,54 @@ describe('Sloploop', () => {
     anchorClickSpy.mockRestore()
   })
 
+  it('Export WAV in clip mode reports CLIP export', async () => {
+    const createObjectURL = vi.fn(() => 'blob:test-url')
+    const revokeObjectURL = vi.fn()
+    const anchorClickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+
+    globalThis.URL.createObjectURL = createObjectURL
+    globalThis.URL.revokeObjectURL = revokeObjectURL
+
+    render(<App />)
+    await loadMp3File()
+    await userEvent.click(screen.getByText('CLIP'))
+
+    await userEvent.click(screen.getByText('Export WAV'))
+
+    expect(anchorClickSpy).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(screen.getByText('Exported CLIP as WAV')).toBeInTheDocument()
+    })
+
+    anchorClickSpy.mockRestore()
+  })
+
+  it('Export WAV in cut mode reports CUT export', async () => {
+    const createObjectURL = vi.fn(() => 'blob:test-url')
+    const revokeObjectURL = vi.fn()
+    const anchorClickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+
+    globalThis.URL.createObjectURL = createObjectURL
+    globalThis.URL.revokeObjectURL = revokeObjectURL
+
+    render(<App />)
+    await loadMp3File()
+    await userEvent.click(screen.getByText('CUT'))
+
+    await userEvent.click(screen.getByText('Export WAV'))
+
+    expect(anchorClickSpy).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(screen.getByText('Exported CUT as WAV')).toBeInTheDocument()
+    })
+
+    anchorClickSpy.mockRestore()
+  })
+
   // --- Region / selection ---
 
   it('shows a processed waveform panel after a region is created', async () => {
@@ -561,6 +643,26 @@ describe('Sloploop', () => {
     await waitForWaveformReady()
 
     expect(screen.getByText('Select a region to preview the result.')).toBeInTheDocument()
+  })
+
+  it('updates the processed panel title to match the current mode', async () => {
+    render(<App />)
+    await loadMp3File()
+    await waitForWaveformReady()
+
+    const sourcePanel = screen.getByRole('heading', { name: /car-idle-106494/i }).closest('section')
+    if (!sourcePanel) {
+      throw new Error('Source panel not found')
+    }
+
+    expect(within(sourcePanel).queryByRole('heading', { name: 'Loop Result' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Loop Result' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('CLIP'))
+    expect(screen.getByRole('heading', { name: 'Clip Result' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('CUT'))
+    expect(screen.getByRole('heading', { name: 'Cut Result' })).toBeInTheDocument()
   })
 
   it('sets the crossfade slider max to 45% of the selection and clamps the value to 200ms', async () => {

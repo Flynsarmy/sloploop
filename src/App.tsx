@@ -746,6 +746,18 @@ function App() {
   const processCut = useCallback(
     (buffer: AudioBuffer) => {
       const ctx = getAudioContext()
+      const { startSample: rawStartSample, endSample: rawEndSample } = ensureSelectionSamples(
+        buffer,
+        false,
+      )
+      const rawBeforeLen = rawStartSample
+      const rawAfterLen = buffer.length - rawEndSample
+
+      // Reject edge-to-edge selections even when snap-to-zero would move bounds inward.
+      if (rawBeforeLen < 1 || rawAfterLen < 1) {
+        throw new Error('Cut selection must leave audio on both sides.')
+      }
+
       const { startSample, endSample } = ensureSelectionSamples(buffer, snapToZeroCrossing)
       const beforeLen = startSample
       const afterLen = buffer.length - endSample
