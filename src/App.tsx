@@ -1189,6 +1189,7 @@ function App() {
         })
         if (!isRestoringRegionRef.current) {
           applySelectionCrossfadePresetRef.current(current.start, current.end)
+          stopPreview()
         }
         styleRegionRef.current(current.start, current.end, (current as { element?: HTMLElement }).element)
         applyWaveColorsRef.current(true)
@@ -1198,7 +1199,6 @@ function App() {
           cursorWidth: 2,
         })
         ;(ws as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(current.start)
-        setTransportState('stop')
       })
 
       regions.on('region-updated', (region) => {
@@ -1213,7 +1213,7 @@ function App() {
           cursorWidth: 2,
         })
         ;(ws as WaveSurfer & { setTime?: (time: number) => void }).setTime?.(region.start)
-        setTransportState('stop')
+        stopPreview()
       })
 
       regions.on('region-removed', () => {
