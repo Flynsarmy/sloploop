@@ -101,6 +101,8 @@ function App() {
   const processedPreviewStartedAtSecRef = useRef(0)
   const processedPlayheadRafRef = useRef<number | null>(null)
   const isRestoringRegionRef = useRef(false)
+  const modeRef = useRef(mode)
+  const getSelectionCrossfadeSecondsRef = useRef<() => number>(() => 0)
 
   useEffect(() => {
     loopPreviewEnabledRef.current = loopPreviewEnabled
@@ -109,6 +111,10 @@ function App() {
   useEffect(() => {
     processedLoopPreviewEnabledRef.current = processedLoopPreviewEnabled
   }, [processedLoopPreviewEnabled])
+
+  useEffect(() => {
+    modeRef.current = mode
+  }, [mode])
 
   const getSelectionCrossfadeSeconds = useCallback(() => {
     if (mode === 'loop') {
@@ -119,6 +125,10 @@ function App() {
     }
     return cutCrossfadeSec
   }, [clipFadeInMs, clipFadeOutMs, cutCrossfadeSec, loopCrossfadeSec, mode])
+
+  useEffect(() => {
+    getSelectionCrossfadeSecondsRef.current = getSelectionCrossfadeSeconds
+  }, [getSelectionCrossfadeSeconds])
 
   const applySelectionCrossfadePreset = useCallback((start: number, end: number) => {
     const selectionSeconds = Math.max(0, end - start)
@@ -223,14 +233,18 @@ function App() {
       const edgeStop = `${percent.toFixed(3)}%`
       const innerStop = `${(100 - percent).toFixed(3)}%`
 
-      element.style.background = `linear-gradient(90deg, ${SELECTION_CROSSFADE_FILL} 0%, ${SELECTION_CROSSFADE_FILL} ${edgeStop}, ${SELECTION_FILL_COLOR} ${edgeStop}, ${SELECTION_FILL_COLOR} ${innerStop}, ${SELECTION_CROSSFADE_FILL} ${innerStop}, ${SELECTION_CROSSFADE_FILL} 100%)`
+      if (mode === 'cut') {
+        element.style.background = SELECTION_FILL_COLOR
+      } else {
+        element.style.background = `linear-gradient(90deg, ${SELECTION_CROSSFADE_FILL} 0%, ${SELECTION_CROSSFADE_FILL} ${edgeStop}, ${SELECTION_FILL_COLOR} ${edgeStop}, ${SELECTION_FILL_COLOR} ${innerStop}, ${SELECTION_CROSSFADE_FILL} ${innerStop}, ${SELECTION_CROSSFADE_FILL} 100%)`
+      }
       element.style.backdropFilter = 'brightness(1.85) saturate(1.2)'
       element.style.borderLeft = '1px solid rgba(255, 255, 255, 0.95)'
       element.style.borderRight = '1px solid rgba(255, 255, 255, 0.95)'
       element.style.boxSizing = 'border-box'
       element.style.zIndex = '4'
     },
-    [getSelectionCrossfadeSeconds],
+    [getSelectionCrossfadeSeconds, mode],
   )
 
   const applyWaveColors = useCallback(() => {
@@ -1112,11 +1126,45 @@ function App() {
         const endRatio = clamp(end / duration, 0, 1)
         const startPx = clamp(startRatio * totalWidth, 0, totalWidth)
         const endPx = clamp(endRatio * totalWidth, startPx, totalWidth)
+        const leftWidth = startPx
+        const rightWidth = Math.max(0, totalWidth - endPx)
 
         left.style.left = '0px'
-        left.style.width = `${startPx}px`
+        left.style.width = `${leftWidth}px`
         right.style.left = `${endPx}px`
-        right.style.width = `${Math.max(0, totalWidth - endPx)}px`
+        right.style.width = `${rightWidth}px`
+
+        const outsideFillColor = 'rgba(0, 0, 0, 0.42)'
+        left.style.background = outsideFillColor
+        right.style.background = outsideFillColor
+
+        if (modeRef.current !== 'cut' || totalWidth <= 0) {
+          return
+        }
+
+        const desiredCrossfadeSec = getSelectionCrossfadeSecondsRef.current()
+        if (desiredCrossfadeSec <= 0) {
+          return
+        }
+
+        const seamCrossfadeSec = clamp(desiredCrossfadeSec, 0, Math.min(start, duration - end))
+        if (seamCrossfadeSec <= 0) {
+          return
+        }
+
+        const fadePixels = (seamCrossfadeSec / duration) * totalWidth
+        const leftBandPercent = clamp((fadePixels / Math.max(1, leftWidth)) * 100, 0, 100)
+        const rightBandPercent = clamp((fadePixels / Math.max(1, rightWidth)) * 100, 0, 100)
+
+        if (leftWidth > 0 && leftBandPercent > 0) {
+          const leftBandStart = (100 - leftBandPercent).toFixed(3)
+          left.style.background = `linear-gradient(90deg, ${outsideFillColor} 0%, ${outsideFillColor} ${leftBandStart}%, ${SELECTION_CROSSFADE_FILL} ${leftBandStart}%, ${SELECTION_CROSSFADE_FILL} 100%)`
+        }
+
+        if (rightWidth > 0 && rightBandPercent > 0) {
+          const rightBandEnd = rightBandPercent.toFixed(3)
+          right.style.background = `linear-gradient(90deg, ${SELECTION_CROSSFADE_FILL} 0%, ${SELECTION_CROSSFADE_FILL} ${rightBandEnd}%, ${outsideFillColor} ${rightBandEnd}%, ${outsideFillColor} 100%)`
+        }
       }
 
       regions.enableDragSelection({
