@@ -50,7 +50,7 @@ function App() {
   const [loopCrossfadeSec, setLoopCrossfadeSec] = useState(0.12)
   const [crossfadeMaxSec, setCrossfadeMaxSec] = useState(DEFAULT_CROSSFADE_MAX_SEC)
   const [loopCurve, setLoopCurve] = useState<LoopCurve>('smoothstep')
-  const [snapToZeroCrossing, setSnapToZeroCrossing] = useState(true)
+  const [snapToZeroCrossing, setSnapToZeroCrossing] = useState(false)
   const [embedLoopSidecar, setEmbedLoopSidecar] = useState(false)
 
   const [clipFadeInMs, setClipFadeInMs] = useState(16)
@@ -64,6 +64,7 @@ function App() {
   const [loopPreviewEnabled, setLoopPreviewEnabled] = useState(true)
   const [processedTransportState, setProcessedTransportState] = useState<TransportState>('stop')
   const [processedLoopPreviewEnabled, setProcessedLoopPreviewEnabled] = useState(true)
+  const [playbackVolume, setPlaybackVolume] = useState(1)
   const [undoCount, setUndoCount] = useState(0)
   const [isWaveformReady, setIsWaveformReady] = useState(false)
   const [hasActiveSelection, setHasActiveSelection] = useState(false)
@@ -76,6 +77,7 @@ function App() {
   const regionsRef = useRef<RegionsPlugin | null>(null)
   const contextRef = useRef<AudioContext | null>(null)
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null)
+  const previewGainNodeRef = useRef<GainNode | null>(null)
   const undoRef = useRef<AudioBuffer[]>([])
   const zoomRef = useRef(zoom)
   const selectionPreviewBufferRef = useRef<AudioBuffer | null>(null)
@@ -99,11 +101,13 @@ function App() {
   const loopPreviewEnabledRef = useRef(loopPreviewEnabled)
   const processedLoopPreviewEnabledRef = useRef(processedLoopPreviewEnabled)
   const processedPreviewSourceRef = useRef<AudioBufferSourceNode | null>(null)
+  const processedPreviewGainNodeRef = useRef<GainNode | null>(null)
   const processedPreviewOffsetSecRef = useRef(0)
   const processedPreviewStartedAtSecRef = useRef(0)
   const processedPlayheadRafRef = useRef<number | null>(null)
   const isRestoringRegionRef = useRef(false)
   const modeRef = useRef(mode)
+  const playbackVolumeRef = useRef(playbackVolume)
   const getSelectionCrossfadeSecondsRef = useRef<() => number>(() => 0)
 
   useEffect(() => {
@@ -117,6 +121,16 @@ function App() {
   useEffect(() => {
     modeRef.current = mode
   }, [mode])
+
+  useEffect(() => {
+    playbackVolumeRef.current = playbackVolume
+    const ctx = contextRef.current
+    if (!ctx) {
+      return
+    }
+    previewGainNodeRef.current?.gain.setValueAtTime(playbackVolume, ctx.currentTime)
+    processedPreviewGainNodeRef.current?.gain.setValueAtTime(playbackVolume, ctx.currentTime)
+  }, [playbackVolume])
 
   const getSelectionCrossfadeSeconds = useCallback(() => {
     if (mode === 'loop') {
@@ -373,18 +387,26 @@ function App() {
         previewSourceRef.current.stop()
         previewSourceRef.current.disconnect()
         previewSourceRef.current = null
+        previewGainNodeRef.current?.disconnect()
+        previewGainNodeRef.current = null
       }
 
       const source = ctx.createBufferSource()
+      const gainNode = ctx.createGain()
       source.buffer = buffer
       source.loop = loopPreviewEnabledRef.current
-      source.connect(ctx.destination)
+      gainNode.gain.setValueAtTime(playbackVolumeRef.current, ctx.currentTime)
+      source.connect(gainNode)
+      gainNode.connect(ctx.destination)
+      previewGainNodeRef.current = gainNode
       source.onended = () => {
         if (previewSourceRef.current !== source) {
           return
         }
 
         previewSourceRef.current = null
+        previewGainNodeRef.current?.disconnect()
+        previewGainNodeRef.current = null
         if (!loopPreviewEnabledRef.current) {
           selectionPreviewOffsetSecRef.current = 0
           stopPlayheadTracking()
@@ -419,6 +441,8 @@ function App() {
       previewSourceRef.current.disconnect()
       previewSourceRef.current = null
     }
+    previewGainNodeRef.current?.disconnect()
+    previewGainNodeRef.current = null
 
     stopPlayheadTracking()
     selectionPreviewOffsetSecRef.current = 0
@@ -432,6 +456,8 @@ function App() {
       processedPreviewSourceRef.current.disconnect()
       processedPreviewSourceRef.current = null
     }
+    processedPreviewGainNodeRef.current?.disconnect()
+    processedPreviewGainNodeRef.current = null
 
     stopProcessedPlayheadTracking()
     processedPreviewOffsetSecRef.current = 0
@@ -458,6 +484,8 @@ function App() {
     source.stop()
     source.disconnect()
     processedPreviewSourceRef.current = null
+    processedPreviewGainNodeRef.current?.disconnect()
+    processedPreviewGainNodeRef.current = null
     stopProcessedPlayheadTracking()
     setProcessedTransportState('pause')
   }, [processedBuffer, stopProcessedPlayheadTracking])
@@ -479,18 +507,26 @@ function App() {
         processedPreviewSourceRef.current.stop()
         processedPreviewSourceRef.current.disconnect()
         processedPreviewSourceRef.current = null
+        processedPreviewGainNodeRef.current?.disconnect()
+        processedPreviewGainNodeRef.current = null
       }
 
       const source = ctx.createBufferSource()
+      const gainNode = ctx.createGain()
       source.buffer = buffer
       source.loop = processedLoopPreviewEnabledRef.current
-      source.connect(ctx.destination)
+      gainNode.gain.setValueAtTime(playbackVolumeRef.current, ctx.currentTime)
+      source.connect(gainNode)
+      gainNode.connect(ctx.destination)
+      processedPreviewGainNodeRef.current = gainNode
       source.onended = () => {
         if (processedPreviewSourceRef.current !== source) {
           return
         }
 
         processedPreviewSourceRef.current = null
+        processedPreviewGainNodeRef.current?.disconnect()
+        processedPreviewGainNodeRef.current = null
         if (!processedLoopPreviewEnabledRef.current) {
           processedPreviewOffsetSecRef.current = 0
           stopProcessedPlayheadTracking()
@@ -862,7 +898,7 @@ function App() {
     setLoopCrossfadeSec(0.12)
     setCrossfadeMaxSec(DEFAULT_CROSSFADE_MAX_SEC)
     setLoopCurve('smoothstep')
-    setSnapToZeroCrossing(true)
+    setSnapToZeroCrossing(false)
     setEmbedLoopSidecar(false)
     setClipFadeInMs(16)
     setClipFadeOutMs(16)
@@ -872,6 +908,7 @@ function App() {
     setLoopPreviewEnabled(true)
     setProcessedTransportState('stop')
     setProcessedLoopPreviewEnabled(true)
+    setPlaybackVolume(1)
   }, [stopPreview, stopProcessedPreview])
 
   const handleChangeFile = useCallback(() => {
@@ -999,6 +1036,8 @@ function App() {
     source.stop()
     source.disconnect()
     previewSourceRef.current = null
+    previewGainNodeRef.current?.disconnect()
+    previewGainNodeRef.current = null
     stopPlayheadTracking()
     setTransportState('pause')
   }, [stopPlayheadTracking])
@@ -1018,6 +1057,8 @@ function App() {
 
       const cut = processCut(audioBuffer)
       setAudioBuffer(cut)
+      clearSelectionRef.current(cut.duration)
+      setHasActiveSelection(false)
       setMessage('Cut applied to source. You can undo if needed.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Cut failed.')
@@ -1355,8 +1396,10 @@ function App() {
     }
   }, [stopPreview, stopProcessedPreview])
 
+  const shouldShowProcessedResult = mode === 'cut' || hasActiveSelection
+
   useEffect(() => {
-    if (!hasActiveSelection || !processedBuffer) {
+    if (!shouldShowProcessedResult || !processedBuffer) {
       if (processedWavesurferRef.current) {
         processedWavesurferRef.current.destroy()
         processedWavesurferRef.current = null
@@ -1425,10 +1468,10 @@ function App() {
         processedWavesurferRef.current = null
       }
     }
-  }, [hasActiveSelection, processedBuffer, stopProcessedPreview])
+  }, [processedBuffer, shouldShowProcessedResult, stopProcessedPreview])
 
   useEffect(() => {
-    if (!audioBuffer || !hasActiveSelection) {
+    if (!audioBuffer || !shouldShowProcessedResult) {
       stopProcessedPreview()
       setProcessedBuffer(null)
       return
@@ -1436,12 +1479,21 @@ function App() {
 
     const buf = (normalizeOutput && normalizedDisplayBuffer) ? normalizedDisplayBuffer : audioBuffer
     try {
-      const out = processByMode(buf)
+      const out = mode === 'cut' && !hasActiveSelection ? buf : processByMode(buf)
       setProcessedBuffer(out)
     } catch {
       setProcessedBuffer(null)
     }
-  }, [audioBuffer, normalizedDisplayBuffer, normalizeOutput, hasActiveSelection, processByMode, stopProcessedPreview])
+  }, [
+    audioBuffer,
+    hasActiveSelection,
+    mode,
+    normalizedDisplayBuffer,
+    normalizeOutput,
+    processByMode,
+    shouldShowProcessedResult,
+    stopProcessedPreview,
+  ])
 
   useEffect(() => {
     const ws = processedWavesurferRef.current
@@ -1486,7 +1538,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [hasActiveSelection, processedBuffer])
+  }, [processedBuffer])
 
   useEffect(() => {
     const buf = (normalizeOutput && normalizedDisplayBuffer) ? normalizedDisplayBuffer : audioBuffer
@@ -1619,6 +1671,7 @@ function App() {
         processedTransportState={processedTransportState}
         loopPreviewEnabled={loopPreviewEnabled}
         processedLoopPreviewEnabled={processedLoopPreviewEnabled}
+        playbackVolume={playbackVolume}
         waveColor={WAVEFORM_BASE_COLOR}
         onModeChange={setMode}
         onLoopCrossfadeChange={handleLoopCrossfadeChange}
@@ -1638,6 +1691,7 @@ function App() {
         onPauseSelection={pauseSelection}
         onStopPreview={stopPreview}
         onToggleLoopPreview={toggleLoopPreview}
+        onPlaybackVolumeChange={(value) => setPlaybackVolume(clamp(value, 0, 1))}
         onRegionStartCommit={handleRegionStartCommit}
         onRegionEndCommit={handleRegionEndCommit}
         onNormalizeOutputChange={setNormalizeOutput}

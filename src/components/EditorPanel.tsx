@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent, RefObject } from 'react'
-import { Pause, Play, Repeat, Square } from 'lucide-react'
+import { Pause, Play, Repeat, Square, Volume2 } from 'lucide-react'
 import type { TransportState } from '../types/app'
 
 type EditorPanelProps = {
@@ -15,6 +15,7 @@ type EditorPanelProps = {
   waveColor: string
   transportState: TransportState
   loopPreviewEnabled: boolean
+  playbackVolume: number
   allowFileDrop?: boolean
   showImportCapMessage?: boolean
   footerPrimaryText?: string
@@ -26,10 +27,13 @@ type EditorPanelProps = {
   onFileInput?: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>
   normalizeOutput?: boolean
   onNormalizeOutputChange?: (checked: boolean) => void
+  showApplyCutButton?: boolean
+  onApplyCut?: () => void
   onPlaySelection: () => void
   onPauseSelection: () => void
   onStopPreview: () => void
   onToggleLoopPreview: () => void
+  onPlaybackVolumeChange: (value: number) => void
 }
 
 function EditorPanel({
@@ -44,6 +48,7 @@ function EditorPanel({
   waveColor,
   transportState,
   loopPreviewEnabled,
+  playbackVolume,
   allowFileDrop = true,
   showImportCapMessage = true,
   footerPrimaryText = 'Drag region handles to define selection.',
@@ -53,12 +58,15 @@ function EditorPanel({
   onRegionEndCommit,
   normalizeOutput,
   onNormalizeOutputChange,
+  showApplyCutButton = false,
+  onApplyCut,
   onDrop,
   onFileInput,
   onPlaySelection,
   onPauseSelection,
   onStopPreview,
   onToggleLoopPreview,
+  onPlaybackVolumeChange,
 }: EditorPanelProps) {
   const boundsEditable =
     typeof selectionDurationSec === 'number' && onRegionStartCommit !== undefined && onRegionEndCommit !== undefined
@@ -182,6 +190,22 @@ function EditorPanel({
           >
             <Repeat size={17} />
           </button>
+          <label
+            className="ml-1 inline-flex items-center gap-0.5 text-[13px] text-app-muted"
+            title="Preview volume affects playback loudness only. It does not change waveform display or exported WAV level."
+          >
+            <span className="pr-3"><Volume2 size={17} /></span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={playbackVolume}
+              onChange={(event) => onPlaybackVolumeChange(Number(event.target.value))}
+              className="w-28 accent-accent-orange"
+            />
+            <span className="pl-1 min-w-10 text-left">{Math.round(playbackVolume * 100)}%</span>
+          </label>
           {onNormalizeOutputChange !== undefined ? (
             <label className="ml-1 inline-flex cursor-pointer select-none items-center gap-2 text-[13px] text-app-muted">
               <input
@@ -193,6 +217,18 @@ function EditorPanel({
               />
               Normalize
             </label>
+          ) : null}
+          {showApplyCutButton && onApplyCut ? (
+            <button
+              type="button"
+              title="Apply the current cut to commit this selection, then make a new selection for the next cut."
+              aria-label="Apply cut"
+              className="ml-auto rounded-none border border-accent-orange bg-control-bg px-3 py-2 text-[13px] font-medium text-accent-orange transition hover:bg-accent-orange/10 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={onApplyCut}
+              disabled={!canProcess}
+            >
+              Apply Cut
+            </button>
           ) : null}
         </div>
       ) : null}

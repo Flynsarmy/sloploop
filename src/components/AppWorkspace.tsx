@@ -31,6 +31,7 @@ type AppWorkspaceProps = {
   processedTransportState: TransportState
   loopPreviewEnabled: boolean
   processedLoopPreviewEnabled: boolean
+  playbackVolume: number
   waveColor: string
   onModeChange: (mode: Mode) => void
   onLoopCrossfadeChange: (value: number) => void
@@ -50,6 +51,7 @@ type AppWorkspaceProps = {
   onPauseSelection: () => void
   onStopPreview: () => void
   onToggleLoopPreview: () => void
+  onPlaybackVolumeChange: (value: number) => void
   onRegionStartCommit: (value: number) => void
   onRegionEndCommit: (value: number) => void
   onNormalizeOutputChange: (checked: boolean) => void
@@ -89,6 +91,7 @@ function AppWorkspace({
   processedTransportState,
   loopPreviewEnabled,
   processedLoopPreviewEnabled,
+  playbackVolume,
   waveColor,
   onModeChange,
   onLoopCrossfadeChange,
@@ -108,6 +111,7 @@ function AppWorkspace({
   onPauseSelection,
   onStopPreview,
   onToggleLoopPreview,
+  onPlaybackVolumeChange,
   onRegionStartCommit,
   onRegionEndCommit,
   onNormalizeOutputChange,
@@ -116,7 +120,8 @@ function AppWorkspace({
   onStopProcessedPreview,
   onToggleProcessedLoopPreview,
 }: AppWorkspaceProps) {
-  const showSelectRegionPrompt = showWaveform && !hasActiveSelection
+  const showProcessedResult = Boolean(processedBuffer) && (hasActiveSelection || mode === 'cut')
+  const showSelectRegionPrompt = showWaveform && !showProcessedResult && mode !== 'cut'
 
   return (
     <main className={audioBuffer ? 'grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]' : 'grid gap-4'}>
@@ -162,6 +167,7 @@ function AppWorkspace({
           waveColor={waveColor}
           transportState={transportState}
           loopPreviewEnabled={loopPreviewEnabled}
+          playbackVolume={playbackVolume}
           normalizeOutput={normalizeOutput}
           onNormalizeOutputChange={onNormalizeOutputChange}
           onDrop={onDrop}
@@ -170,8 +176,11 @@ function AppWorkspace({
           onPauseSelection={onPauseSelection}
           onStopPreview={onStopPreview}
           onToggleLoopPreview={onToggleLoopPreview}
+          onPlaybackVolumeChange={onPlaybackVolumeChange}
           onRegionStartCommit={onRegionStartCommit}
           onRegionEndCommit={onRegionEndCommit}
+          showApplyCutButton={mode === 'cut' && hasActiveSelection}
+          onApplyCut={onApplyCut}
           footerPrimaryText="Drag region handles to define selection."
         />
 
@@ -188,21 +197,23 @@ function AppWorkspace({
             waveColor={waveColor}
             transportState="stop"
             loopPreviewEnabled={processedLoopPreviewEnabled}
+            playbackVolume={playbackVolume}
             allowFileDrop={false}
             showImportCapMessage={false}
             onPlaySelection={() => undefined}
             onPauseSelection={() => undefined}
             onStopPreview={() => undefined}
             onToggleLoopPreview={() => undefined}
+            onPlaybackVolumeChange={onPlaybackVolumeChange}
             footerPrimaryText=""
           />
         ) : null}
 
-        {hasActiveSelection && processedBuffer ? (
+        {showProcessedResult ? (
           <EditorPanel
             sourceName={processedResultTitle}
             regionStart={0}
-            regionEnd={processedBuffer.duration}
+            regionEnd={processedBuffer?.duration ?? 0}
             audioLoaded
             canProcess
             showWaveform
@@ -210,13 +221,19 @@ function AppWorkspace({
             waveColor={waveColor}
             transportState={processedTransportState}
             loopPreviewEnabled={processedLoopPreviewEnabled}
+            playbackVolume={playbackVolume}
             allowFileDrop={false}
             showImportCapMessage={false}
             onPlaySelection={onPlayProcessedPreview}
             onPauseSelection={onPauseProcessedPreview}
             onStopPreview={onStopProcessedPreview}
             onToggleLoopPreview={onToggleProcessedLoopPreview}
-            subtitleText="Processed waveform from current selection."
+            onPlaybackVolumeChange={onPlaybackVolumeChange}
+            subtitleText={
+              hasActiveSelection
+                ? 'Processed waveform from current selection.'
+                : 'Full clip preview (no selection box).'
+            }
             footerPrimaryText=""
           />
         ) : null}

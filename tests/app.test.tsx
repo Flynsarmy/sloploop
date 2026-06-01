@@ -87,6 +87,17 @@ class MockAudioContext {
     } as unknown as AudioBufferSourceNode
   }
 
+  createGain(): GainNode {
+    return {
+      gain: {
+        value: 1,
+        setValueAtTime: () => undefined,
+      },
+      connect: () => undefined,
+      disconnect: () => undefined,
+    } as unknown as GainNode
+  }
+
   async decodeAudioData(): Promise<AudioBuffer> {
     const sampleRate = 48000
     const length = sampleRate * 2
@@ -154,6 +165,18 @@ function simulateRegionUpdated(start: number, end: number) {
   const element = document.createElement('div')
   const region = { id: 'test-region', start, end, remove: vi.fn(), element }
   regionHandlers.get('region-updated')?.(region)
+}
+
+function getCrossfadeSlider(): HTMLInputElement {
+  const slider = screen
+    .getAllByRole('slider')
+    .find((el) => (el as HTMLInputElement).min === '0.001' && (el as HTMLInputElement).step === '0.001')
+
+  if (!slider) {
+    throw new Error('Crossfade slider not found')
+  }
+
+  return slider as HTMLInputElement
 }
 
 // ---------------------------------------------------------------------------
@@ -665,6 +688,18 @@ describe('Sloploop', () => {
     expect(screen.getByRole('heading', { name: 'Cut Result' })).toBeInTheDocument()
   })
 
+  it('shows full-clip result panel in cut mode when no selection exists', async () => {
+    render(<App />)
+    await loadMp3File()
+    await waitForWaveformReady()
+
+    await userEvent.click(screen.getByText('CUT'))
+
+    expect(screen.getByRole('heading', { name: 'Cut Result' })).toBeInTheDocument()
+    expect(screen.getByText('Full clip preview (no selection box).')).toBeInTheDocument()
+    expect(screen.queryByText('Select a region to preview the result.')).not.toBeInTheDocument()
+  })
+
   it('sets the crossfade slider max to 45% of the selection and clamps the value to 200ms', async () => {
     render(<App />)
     await loadMp3File()
@@ -672,7 +707,7 @@ describe('Sloploop', () => {
 
     simulateRegionCreated(0.25, 2.5)
 
-    const slider = screen.getByRole('slider') as HTMLInputElement
+    const slider = getCrossfadeSlider()
     await waitFor(() => {
       expect(Number(slider.max)).toBeCloseTo(1.0125, 5)
       expect(slider.value).toBe('0.2')
@@ -686,7 +721,7 @@ describe('Sloploop', () => {
 
     simulateRegionCreated(0.25, 1.25)
 
-    const slider = screen.getByRole('slider') as HTMLInputElement
+    const slider = getCrossfadeSlider()
     await waitFor(() => {
       expect(slider.value).toBe('0.1')
     })
@@ -705,7 +740,7 @@ describe('Sloploop', () => {
 
     simulateRegionCreated(0.25, 2.5)
 
-    const slider = screen.getByRole('slider') as HTMLInputElement
+    const slider = getCrossfadeSlider()
     await waitFor(() => {
       expect(slider.value).toBe('0.2')
     })
@@ -732,7 +767,7 @@ describe('Sloploop', () => {
 
     await waitFor(() => {
       expect(screen.getByText('0.789 s')).toBeInTheDocument()
-      expect(screen.getByRole('slider')).toHaveValue('0.789')
+      expect(getCrossfadeSlider()).toHaveValue('0.789')
     })
   })
 
