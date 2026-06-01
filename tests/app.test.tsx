@@ -66,6 +66,7 @@ vi.mock('lucide-react', () => ({
   Pause: () => <span>pause</span>,
   Square: () => <span>square</span>,
   Repeat: () => <span>repeat</span>,
+  Volume2: () => <span>volume</span>,
 }))
 
 class MockAudioContext {
@@ -429,10 +430,10 @@ describe('Sloploop', () => {
     const checkbox = screen.getByLabelText(
       'Snap region bounds to nearest zero crossing',
     ) as HTMLInputElement
-    expect(checkbox.checked).toBe(true)
+    expect(checkbox.checked).toBe(false)
 
     await userEvent.click(checkbox)
-    expect(checkbox.checked).toBe(false)
+    expect(checkbox.checked).toBe(true)
   })
 
   it('embed loop sidecar JSON checkbox is unchecked by default and can be toggled', async () => {
@@ -524,7 +525,7 @@ describe('Sloploop', () => {
       expect(sourcePanel?.textContent).toContain('0.500')
     })
 
-    await userEvent.click(screen.getByText('Apply Cut'))
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Cut' }))
 
     await waitFor(() => {
       expect(screen.getByText('Cut applied to source. You can undo if needed.')).toBeInTheDocument()
